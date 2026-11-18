@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "midline-agent"
+version = "0.1.0"
+description = "Research code for a traceable midline glioma decision-support workflow."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+diagnostic = ["numpy>=1.24", "pillow>=10", "safetensors>=0.4", "torch>=2.1"]
+treatment = ["openai>=1.54"]
+all = [
+  "numpy>=1.24",
+  "openai>=1.54",
+  "pillow>=10",
+  "safetensors>=0.4",
+  "torch>=2.1",
+]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+midline-extract-features = "scripts.extract_features:main"
+midline-train-attention-mil = "scripts.train_attention_mil:main"
+midline-run = "scripts.run_pipeline:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,11 @@
+# User-owned external BrainVLM configuration.
+# Resolve these values in the external training environment.
+annotations: ${BRAINVLM_ANNOTATIONS:?Set BRAINVLM_ANNOTATIONS}
+image_root: ${BRAINVLM_IMAGE_ROOT:?Set BRAINVLM_IMAGE_ROOT}
+source_root: ${BRAINVLM_SOURCE_ROOT:?Set BRAINVLM_SOURCE_ROOT}
+checkpoint: ${BRAINVLM_CHECKPOINT:?Set BRAINVLM_CHECKPOINT}
+prompt_version: brainvlm-prompts-v1
+tasks:
+  - keyframe
+  - tumor_classification
+  - tumor_who_grade

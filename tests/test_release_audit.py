@@ -1,0 +1,501 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from scripts.release_audit import audit_paths
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AUDIT_SCRIPT = PROJECT_ROOT / "scripts" / "release_audit.py"
+
+
+def _codes(paths: list[Path]) -> set[str]:
+    return {violation.code for violation in audit_paths(paths)}
+
+
+def _run_audit(*arguments: str, root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(AUDIT_SCRIPT), *arguments, "--root", str(root)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_audit_rejects_empty_path_collection() -> None:
+    assert _codes([]) == {"empty-candidate"}
+
+
+def test_manifest_mode_scans_only_listed_candidate_files(tmp_path: Path) -> None:
+    included = tmp_path / "package.py"
+    included.write_text("VALUE = 1\n", encoding="utf-8")
+    unlisted = tmp_path / ".env"
+    unlisted.write_text("OPENAI_API_KEY=secret\n", encoding="utf-8")
+    manifest = tmp_path / "release-manifest.txt"
+    manifest.write_text("package.py\n", encoding="utf-8")
+
+    result = _run_audit("--manifest", str(manifest), root=tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Scanned 1 candidate file" in result.stdout
+
+
+def test_manifest_mode_rejects_an_empty_manifest(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-manifest.txt"
+    manifest.write_text("# No release files yet.\n", encoding="utf-8")
+
+    result = _run_audit("--manifest", str(manifest), root=tmp_path)
+
+    assert result.returncode == 1
+    assert "empty-candidate" in result.stdout
+
+
+def test_manifest_mode_rejects_missing_and_parent_paths(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-manifest.txt"
+    manifest.write_text("missing.py\n../outside.py\n", encoding="utf-8")
+
+    result = _run_audit("--manifest", str(manifest), root=tmp_path)
+
+    assert result.returncode == 1
+    assert "missing-file" in result.stdout
+    assert "invalid-manifest-path" in result.stdout
+
+
+@pytest.mark.parametrize("mode", ["manifest", "candidate"])
+def test_candidate_sources_reject_intermediate_symlinks(tmp_path: Path, mode: str) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside_candidate = tmp_path / "outside" / "candidate"
+    outside_candidate.mkdir(parents=True)
+    (outside_candidate / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (root / "linked").symlink_to(tmp_path / "outside", target_is_directory=True)
+
+    if mode == "manifest":
+        manifest = root / "release-manifest.txt"
+        manifest.write_text("linked/candidate/module.py\n", encoding="utf-8")
+        result = _run_audit("--manifest", str(manifest), root=root)
+    else:
+        result = _run_audit("--candidate", str(root / "linked" / "candidate"), root=root)
+
+    assert result.returncode == 1
+    assert "symlink" in result.stdout
+
+
+def test_candidate_mode_scans_a_tree_and_rejects_empty_trees(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    empty_result = _run_audit("--candidate", str(candidate), root=tmp_path)
+    assert empty_result.returncode == 1
+    assert "empty-candidate" in empty_result.stdout
+
+    (candidate / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    populated_result = _run_audit("--candidate", str(candidate), root=tmp_path)
+    assert populated_result.returncode == 0, populated_result.stdout + populated_result.stderr
+    assert "Scanned 1 candidate file" in populated_result.stdout
+
+
+def test_candidate_path_policy_is_relative_to_audited_root(tmp_path: Path) -> None:
+    candidate = tmp_path / "paper" / "repository"
+    candidate.mkdir(parents=True)
+    (candidate / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = _run_audit("--candidate", str(candidate), root=candidate)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_staged_mode_audits_index_blob_instead_of_working_tree(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    settings = repo / "settings.py"
+    embedded_key = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(f'TOKEN = "{embedded_key}"\n', encoding="utf-8")
+    subprocess.run(["git", "add", "settings.py"], cwd=repo, check=True)
+    settings.write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = _run_audit("--staged", root=repo)
+
+    assert result.returncode == 1
+    assert "embedded-secret" in result.stdout
+
+
+def test_tracked_mode_audits_index_blob_instead_of_working_tree(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    settings = repo / "settings.py"
+    embedded_key = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(f'TOKEN = "{embedded_key}"\n', encoding="utf-8")
+    subprocess.run(["git", "add", "settings.py"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Audit Test", "-c", "user.email=audit@example.invalid", "commit", "-qm", "fixture"],
+        cwd=repo,
+        check=True,
+    )
+    settings.write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = _run_audit("--tracked-only", root=repo)
+
+    assert result.returncode == 1
+    assert "embedded-secret" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "paper/manuscript.tex",
+        "examples/case.json",
+        "scripts/run_demo.py",
+        "scripts/eval_who_grade.py",
+        "baselines/model.py",
+    ],
+)
+def test_audit_rejects_non_release_source_paths(tmp_path: Path, relative_path: str) -> None:
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("placeholder\n", encoding="utf-8")
+
+    assert "forbidden-path" in _codes([path])
+
+
+def test_audit_rejects_secret_checkpoint_private_path_and_symlink(tmp_path: Path) -> None:
+    secret_file = tmp_path / ".env"
+    checkpoint = tmp_path / "weights.safetensors"
+    unsafe = tmp_path / "settings.py"
+    private_path = "/" + "userhome/account/private"
+    embedded_key = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+    unsafe.write_text(
+        f'OPENAI_API_KEY = "{embedded_key}"\n'
+        f'MODEL_ROOT = "{private_path}"\n',
+        encoding="utf-8",
+    )
+    target = tmp_path / "target.txt"
+    target.write_text("safe\n", encoding="utf-8")
+    link = tmp_path / "linked.txt"
+    link.symlink_to(target)
+
+    violations = audit_paths([secret_file, checkpoint, unsafe, link])
+
+    assert {violation.code for violation in violations} == {
+        "embedded-secret",
+        "forbidden-path",
+        "private-path",
+        "symlink",
+    }
+
+
+@pytest.mark.parametrize("name", [".env.local", ".env.production", ".env.secret"])
+def test_audit_rejects_suffixed_env_files(tmp_path: Path, name: str) -> None:
+    env_file = tmp_path / name
+    env_file.write_text("VALUE=placeholder\n", encoding="utf-8")
+
+    assert _codes([env_file]) == {"forbidden-path"}
+
+
+def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> None:
+    artifact = tmp_path / "artifact.txt"
+    artifact.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+
+    assert _codes([artifact]) == {"binary-file"}
+
+
+@pytest.mark.parametrize("style", ["quoted", "dotenv", "yaml"])
+def test_audit_rejects_non_placeholder_credential_assignments(tmp_path: Path, style: str) -> None:
+    field_name = "ACCESS" + "_TOKEN"
+    field_value = "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
+    if style == "quoted":
+        credential = tmp_path / "settings.py"
+        assignment = f'{field_name} = "{field_value}"\n'
+    elif style == "dotenv":
+        credential = tmp_path / ".env.example"
+        assignment = f"{field_name}={field_value}\n"
+    else:
+        credential = tmp_path / "settings.yaml"
+        assignment = f"{field_name.lower()}: {field_value}\n"
+    credential.write_text(assignment, encoding="utf-8")
+
+    assert _codes([credential]) == {"embedded-secret"}
+
+
+def test_audit_rejects_json_credential_literals(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.json"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(json.dumps({field_name: field_value}), encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["github_token", "HF_TOKEN", "aws_access_key_id", "aws_secret_access_key", "signing_key"],
+)
+def test_audit_rejects_semantic_json_credential_names(tmp_path: Path, field_name: str) -> None:
+    settings = tmp_path / "settings.json"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(json.dumps({field_name: field_value}), encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_allows_ordinary_json_key(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"key": "display-value"}), encoding="utf-8")
+
+    assert audit_paths([settings]) == []
+
+
+def test_audit_allows_json_null_credential_placeholder(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.json"
+    field_name = "api" + "_key"
+    settings.write_text(json.dumps({field_name: None}), encoding="utf-8")
+
+    assert audit_paths([settings]) == []
+
+
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "ghp_" + "abcdefghijklmnopqrstuvwxyz123456",
+        "hf_" + "abcdefghijklmnopqrstuvwxyz123456",
+        "AKIA" + "ABCDEFGHIJKLMNOP",
+    ],
+)
+def test_audit_rejects_provider_secret_signatures(tmp_path: Path, signature: str) -> None:
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"value": signature}), encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_rejects_shell_reference_with_literal_default(tmp_path: Path) -> None:
+    env_template = tmp_path / ".env.example"
+    field_name = "API" + "_KEY"
+    fallback = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    env_template.write_text(f"{field_name}=${{EXTERNAL_KEY:-{fallback}}}\n", encoding="utf-8")
+
+    assert _codes([env_template]) == {"embedded-secret"}
+
+
+def test_audit_allows_python_environment_credential_loading(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    environment_name = "OPENAI_API" + "_KEY"
+    settings.write_text(f'{field_name} = os.environ.get("{environment_name}")\n', encoding="utf-8")
+
+    assert audit_paths([settings]) == []
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "session_token",
+        "deploy_secret",
+        "database_password",
+        "cloud_credential",
+        "aws_access_key_id",
+        "private_key",
+        "signing_key",
+        "github_token",
+        "HF_TOKEN",
+        "aws_secret_access_key",
+    ],
+)
+def test_audit_rejects_semantic_python_credential_names(tmp_path: Path, field_name: str) -> None:
+    settings = tmp_path / "settings.py"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(f'{field_name} = "{field_value}"\n', encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("GITHUB_TOKEN", "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"),
+        ("HF_TOKEN", "hf_" + "abcdefghijklmnopqrstuvwxyz123456"),
+        ("AWS_ACCESS_KEY_ID", "AKIA" + "ABCDEFGHIJKLMNOP"),
+        ("AWS_SECRET_ACCESS_KEY", "literal_abcdefghijklmnopqrstuvwxyz123456"),
+    ],
+)
+def test_audit_rejects_semantic_dotenv_credentials(
+    tmp_path: Path, field_name: str, field_value: str
+) -> None:
+    env_template = tmp_path / ".env.example"
+    env_template.write_text(f"{field_name}={field_value}\n", encoding="utf-8")
+
+    assert _codes([env_template]) == {"embedded-secret"}
+
+
+def test_audit_allows_dotenv_credential_references_and_placeholders(tmp_path: Path) -> None:
+    env_template = tmp_path / ".env.example"
+    env_template.write_text(
+        "GITHUB_TOKEN=${GITHUB_TOKEN}\nHF_TOKEN=<your-token>\nAWS_ACCESS_KEY_ID=\n",
+        encoding="utf-8",
+    )
+
+    assert audit_paths([env_template]) == []
+
+
+def test_audit_allows_ordinary_key_and_sensitive_environment_expression(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    sensitive_name = "github" + "_token"
+    settings.write_text(
+        f'key = "display-value"\n{sensitive_name} = os.environ.get("GITHUB_TOKEN")\n',
+        encoding="utf-8",
+    )
+
+    assert audit_paths([settings]) == []
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("token_position", "4"),
+        ("token_budget", "8192"),
+        ("token_count", "42"),
+        ("password_policy", '"minimum 12 characters"'),
+        ("token_pattern", 'r"[A-Za-z]+"'),
+        ("tokenizer", '"default"'),
+        ("tokenization", '"wordpiece"'),
+    ],
+)
+def test_audit_allows_noncredential_sensitive_word_identifiers(
+    tmp_path: Path, field_name: str, value: str
+) -> None:
+    settings = tmp_path / "settings.py"
+    settings.write_text(f"{field_name} = {value}\n", encoding="utf-8")
+
+    assert audit_paths([settings]) == []
+
+
+def test_audit_rejects_python_dict_credential_literal(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(f'SETTINGS = {{"{field_name}": "{field_value}"}}\n', encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_rejects_python_call_credential_literal(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(f'client = Client({field_name}="{field_value}")\n', encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_rejects_python_subscript_credential_literal(tmp_path: Path) -> None:
+    settings_file = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings_file.write_text(f'settings["{field_name}"] = "{field_value}"\n', encoding="utf-8")
+
+    assert _codes([settings_file]) == {"embedded-secret"}
+
+
+def test_audit_rejects_python_foldable_credential_literal(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    settings.write_text(f'{field_name} = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"\n', encoding="utf-8")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_allows_empty_and_explicit_credential_placeholders(tmp_path: Path) -> None:
+    first_name = "ACCESS" + "_TOKEN"
+    second_name = "AUTH" + "_TOKEN"
+    third_name = "CLIENT" + "_SECRET"
+    env_template = tmp_path / ".env.example"
+    env_template.write_text(
+        "\n".join(
+            (
+                "OPENAI_API_KEY=",
+                f'{first_name}=""',
+                f"{second_name}=<your-token>",
+                f"{third_name}=${{{third_name}}}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    yaml_template = tmp_path / "settings.yaml"
+    yaml_template.write_text("database_password: replace_me\n", encoding="utf-8")
+
+    assert audit_paths([env_template, yaml_template]) == []
+
+
+def test_audit_detects_han_characters_in_any_candidate_text(tmp_path: Path) -> None:
+    text_file = tmp_path / "notes.custom"
+    text_file.write_text("English then " + chr(0x6C49) + "\n", encoding="utf-8")
+
+    assert _codes([text_file]) == {"han-character"}
+
+
+def test_audit_scans_text_even_when_its_path_is_forbidden(tmp_path: Path) -> None:
+    text_file = tmp_path / "paper" / "notes.txt"
+    text_file.parent.mkdir()
+    text_file.write_text("English then " + chr(0x6C49) + "\n", encoding="utf-8")
+
+    assert _codes([text_file]) == {"forbidden-path", "han-character"}
+
+
+def test_audit_rejects_custom_endpoint_configuration_and_relay_names(tmp_path: Path) -> None:
+    endpoint_name = "OPENAI_BASE" + "_URL"
+    argument_name = "base" + "_url"
+    relay_name = "open" + "router"
+    settings = tmp_path / "client.py"
+    settings.write_text(
+        f'{endpoint_name} = "https://relay.invalid/v1"\n'
+        f"client = Client({argument_name}=endpoint)\n"
+        f'provider = "{relay_name}"\n',
+        encoding="utf-8",
+    )
+
+    assert _codes([settings]) == {"custom-openai-endpoint", "relay-service"}
+
+
+def test_audit_rejects_prohibited_term_outside_policy_files(tmp_path: Path) -> None:
+    module = tmp_path / "model.py"
+    prohibited_term = "base" + "line"
+    module.write_text(f"# {prohibited_term} implementation\n", encoding="utf-8")
+
+    assert _codes([module]) == {"prohibited-term"}
+
+
+def test_audit_allows_env_template_and_ordinary_source(tmp_path: Path) -> None:
+    env_example = tmp_path / ".env.example"
+    env_example.write_text("OPENAI_API_KEY=\nOPENAI_MODEL=\n", encoding="utf-8")
+    module = tmp_path / "midline_agent" / "datasets" / "annotations.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert audit_paths([env_example, module]) == []
+
+
+def test_repository_env_template_has_only_official_openai_settings() -> None:
+    variables = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+
+    assert variables == ["OPENAI_API_KEY=", "OPENAI_MODEL="]
+
+
+def test_gitignore_uses_root_runtime_paths_without_hiding_source_package() -> None:
+    patterns = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert "/.env.*" in patterns
+    assert "!/.env.example" in patterns
+    assert "/data/" in patterns
+    assert "/outputs/" in patterns
+    assert "/output/" in patterns
+    assert "/logs/" in patterns
+    assert "/cache/" in patterns
+    assert "/checkpoints/" in patterns
+    assert "/paper/" in patterns
+    assert "data/" not in patterns
+    assert "datasets/" not in patterns
