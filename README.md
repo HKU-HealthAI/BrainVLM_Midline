@@ -62,6 +62,34 @@ and model-access terms. The external BrainVLM source checkout is also required
 for `--source-root` and must provide the adapter described in
 `docs/external-brainvlm-adapter.md`.
 
+## Prepare test data files
+
+The related BrainVLM project supports volumetric `.nii.gz` and `.npy` inputs.
+This repository instead operates on preselected 2D MRI slices and does not
+provide a 3D-to-2D conversion command. Convert or select slices externally
+before running the public workflow; no patient data or example cases are
+bundled here.
+
+Place de-identified slice files beneath a caller-owned image root. Supported
+inputs are RGB PNG/JPEG files and two-dimensional NumPy arrays. The annotation
+reader supports the `T1`, `T1CE` (or `T1C`), `T2`, and `FLAIR` modality labels;
+the loader does not require every modality to be present. Pass the image root
+with `--image-root` and provide annotations as either a top-level JSON list or
+a JSONL file. Every annotation record requires:
+
+- `patient_id`: an opaque patient identifier;
+- `image_path`: a relative path that remains beneath `--image-root`;
+- `modality`: one of the supported modality labels;
+- `slice_index`: the integer slice position; and
+- `tumor_type`: one of `tumor_1` through `tumor_5`.
+
+The case JSON passed through `--case-json` requires `case_id` and may contain
+`clinical_facts` and `mri_manifest`. The `case_id` must match a `patient_id` in
+the annotation file. It must contain 1-128 ASCII characters, begin with an
+alphanumeric character, and otherwise use only alphanumeric characters,
+underscores, periods, colons, or hyphens. Optional fields must contain finite,
+JSON-compatible values, and every `mri_manifest` entry must be an object.
+
 ## Diagnostic workflow
 
 The external BrainVLM integration uses a narrow factory contract and never
