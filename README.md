@@ -181,3 +181,14 @@ privacy review and retention controls.
 - `docs/survival-agent.md` defines the Survival workflow contract.
 - `docs/treatment-providers.md` defines evidence-provider requirements.
 - `THIRD_PARTY_NOTICES.md` records the external dependency boundary.
+
+## Acknowledgement
+
+The related [BrainVLM](https://github.com/HKU-HealthAI/BrainVLM) project builds
+on [MiniGPT-4](https://github.com/Vision-CAIR/MiniGPT-4) and uses
+[Llama 3.1-8B Instruct](#prepare-model-weights) and
+[BiomedCLIP](#prepare-model-weights). BrainVLM Midline integrates BrainVLM
+through the external adapter boundary defined in this repository. Orchestration
+and treatment-report synthesis use the official OpenAI Python SDK and
+[OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses).
+We thank the developers and maintainers of these projects and resources.
