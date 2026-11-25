@@ -83,12 +83,16 @@ a JSONL file. Every annotation record requires:
 - `slice_index`: the integer slice position; and
 - `tumor_type`: one of `tumor_1` through `tumor_5`.
 
+All annotation records that share a `patient_id` must use the same
+`tumor_type`.
+
 The case JSON passed through `--case-json` requires `case_id` and may contain
 `clinical_facts` and `mri_manifest`. The `case_id` must match a `patient_id` in
 the annotation file. It must contain 1-128 ASCII characters, begin with an
 alphanumeric character, and otherwise use only alphanumeric characters,
-underscores, periods, colons, or hyphens. Optional fields must contain finite,
-JSON-compatible values, and every `mri_manifest` entry must be an object.
+underscores, periods, colons, or hyphens. When present, `clinical_facts` must be
+a JSON object and `mri_manifest` must be a JSON array of objects. Their values
+must be finite and JSON-compatible.
 
 ## Diagnostic workflow
 
