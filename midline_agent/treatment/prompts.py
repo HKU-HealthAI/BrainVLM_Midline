@@ -58,8 +58,9 @@ REPORT_SYSTEM_PROMPT = (
 
 def handoff_prompt(*, diagnostic_state: str, survival_state: str) -> str:
     return (
-        "The Python workflow has completed the diagnostic step and represented the Survival Agent as unavailable. "
-        "Confirm whether the Treatment Agent may proceed. Do not alter either agent result.\n"
+        "The Python workflow has completed the Diagnostic and Survival steps. "
+        "Confirm whether the Treatment Agent may proceed from their validated states. "
+        "Do not alter either agent result.\n"
         f"Diagnostic state: {diagnostic_state}\nSurvival state: {survival_state}"
     )
 

@@ -42,7 +42,14 @@ missing, non-finite, or shape-incompatible tensors are rejected.
 The integrated pipeline accepts a caller-owned case JSON containing an opaque
 `case_id`, optional `clinical_facts`, and an optional `mri_manifest`. In-memory
 workflow state is immutable. The persisted `CaseTrace` contains exactly three
-ordered step records: Diagnostic, unavailable Survival, and Treatment.
+ordered step records: Diagnostic, Survival, and Treatment.
+
+Completed Survival results contain a finite risk score, a positive median
+survival time, and paired time/probability vectors. Time points are finite,
+non-negative, and strictly increasing; survival probabilities are finite,
+bounded by zero and one, and non-increasing. A step without a configured model
+is represented explicitly as unavailable rather than replaced with a fallback
+prediction.
 
 The trace hashes the case identifier and excludes raw clinical facts, MRI
 paths, generated slice text, report Markdown, evidence excerpts, and evidence

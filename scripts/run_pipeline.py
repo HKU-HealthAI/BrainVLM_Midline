@@ -15,7 +15,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from midline_agent.orchestrator import MidlineOrchestrator
-from midline_agent.schema import CaseInput, CaseTrace, DiagnosticResult, StepStatus, TreatmentResult
+from midline_agent.schema import (
+    CaseInput,
+    CaseTrace,
+    DiagnosticResult,
+    StepStatus,
+    SurvivalResult,
+    TreatmentResult,
+)
 from midline_agent.state import CaseState
 from midline_agent.treatment.client import OpenAiResponsesClient
 from midline_agent.datasets.annotations import load_annotations
@@ -65,6 +72,8 @@ def main() -> int:
     if not api_key or not model:
         state = CaseState.from_input(case_input).with_diagnostic(
             DiagnosticResult.unavailable("OpenAI configuration is missing")
+        ).with_survival(
+            SurvivalResult.unavailable("OpenAI configuration is missing")
         ).with_treatment(
             TreatmentResult(status=StepStatus("failed", "OpenAI configuration is missing"))
         )

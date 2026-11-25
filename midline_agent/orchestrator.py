@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schema import CaseInput, DiagnosticResult, StepStatus, TreatmentResult
+from .schema import CaseInput, DiagnosticResult, StepStatus, SurvivalResult, TreatmentResult
 from .state import CaseState
 from .treatment.agent import TreatmentAgent
 from .treatment.client import LlmClient, LlmRequest
@@ -20,11 +20,13 @@ class MidlineOrchestrator:
         llm_client: LlmClient,
         *,
         diagnostic_workflow: Any | None = None,
+        survival_workflow: Any | None = None,
         treatment_providers: tuple[EvidenceProvider, ...] = (),
         provider_timeout_seconds: float = 2.0,
     ) -> None:
         self.llm_client = llm_client
         self.diagnostic_workflow = diagnostic_workflow
+        self.survival_workflow = survival_workflow
         self.treatment_agent = TreatmentAgent(
             llm_client,
             treatment_providers,
@@ -45,6 +47,27 @@ class MidlineOrchestrator:
             return result
         except Exception:
             return DiagnosticResult(status=StepStatus("failed", "diagnostic step failed"))
+
+    def _run_survival(
+        self,
+        case_input: CaseInput,
+        diagnostic_result: DiagnosticResult,
+    ) -> SurvivalResult:
+        workflow = self.survival_workflow
+        if workflow is None:
+            return SurvivalResult.unavailable()
+        try:
+            if callable(workflow):
+                result = workflow(case_input, diagnostic_result)
+            else:
+                result = workflow.run(case_input, diagnostic_result)
+            if not isinstance(result, SurvivalResult):
+                raise TypeError("survival workflow must return SurvivalResult")
+            if result.status.state == "pending":
+                raise ValueError("survival workflow must return a terminal result")
+            return result
+        except Exception:
+            return SurvivalResult(status=StepStatus("failed", "survival step failed"))
 
     def _request_handoff(self, state: CaseState) -> bool:
         response = self.llm_client.generate(
@@ -80,11 +103,24 @@ class MidlineOrchestrator:
         state = CaseState.from_input(case_input)
         state = state.with_diagnostic(self._run_diagnostic(case_input))
         if state.diagnostic.status.state == "failed":
+            state = state.with_survival(
+                SurvivalResult.unavailable("Survival was skipped because the Diagnostic step failed")
+            )
             return state.with_treatment(
                 TreatmentResult(
                     status=StepStatus(
                         "failed",
                         "Treatment was skipped because the Diagnostic step failed",
+                    )
+                )
+            )
+        state = state.with_survival(self._run_survival(case_input, state.diagnostic))
+        if state.survival.status.state == "failed":
+            return state.with_treatment(
+                TreatmentResult(
+                    status=StepStatus(
+                        "failed",
+                        "Treatment was skipped because the Survival step failed",
                     )
                 )
             )

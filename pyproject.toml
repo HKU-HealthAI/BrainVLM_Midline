@@ -16,10 +16,14 @@ diagnostic = ["numpy>=1.24", "pillow>=10", "safetensors>=0.4", "torch>=2.1"]
 survival = ["numpy>=1.24", "torch>=2.1", "scikit-learn", "scikit-survival", "pandas", "lifelines"]
 treatment = ["openai>=1.54"]
 all = [
+  "lifelines",
   "numpy>=1.24",
   "openai>=1.54",
+  "pandas",
   "pillow>=10",
   "safetensors>=0.4",
+  "scikit-learn",
+  "scikit-survival",
   "torch>=2.1",
 ]
 dev = ["pytest>=7.4"]
@@ -31,3 +35,6 @@ midline-run = "scripts.run_pipeline:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["midline_agent*", "scripts*"]

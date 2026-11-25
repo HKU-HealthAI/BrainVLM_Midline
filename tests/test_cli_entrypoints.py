@@ -3,7 +3,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from midline_agent.schema import CaseInput, DiagnosticResult, StepStatus, TreatmentResult
+from midline_agent.schema import (
+    CaseInput,
+    DiagnosticResult,
+    StepStatus,
+    SurvivalResult,
+    TreatmentResult,
+)
 from midline_agent.state import CaseState
 
 
@@ -65,6 +71,9 @@ def test_pipeline_persists_minimized_trace_for_failed_downstream_step(
             DiagnosticResult(
                 status=StepStatus("completed"), tumor_type="tumor_2", who_grade="grade_3"
             )
+        )
+        .with_survival(
+            SurvivalResult.unavailable("survival checkpoint unavailable")
         )
         .with_treatment(TreatmentResult(status=StepStatus("failed", "API request failed")))
     )

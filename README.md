@@ -2,13 +2,11 @@
 
 BrainVLM Midline is research code for a traceable midline glioma workflow. It
 connects a BrainVLM slice model, an AttentionMIL patient-level classifier, a
-tumor-conditioned WHO-grade vote, and an evidence-grounded Treatment Agent.
-A hybrid orchestrator enforces the workflow order in Python and uses the
+tumor-conditioned WHO-grade vote, a multimodal Survival Agent, and an
+evidence-grounded Treatment Agent. This release provides the complete source
+code for the Diagnostic, Survival, and Treatment Agents. A hybrid orchestrator
+enforces the Diagnostic -> Survival -> Treatment order in Python and uses the
 official OpenAI Responses API for validated handoffs and report synthesis.
-
-The Survival Agent is intentionally unavailable in this release. The state
-machine records that omission and continues to Treatment only through an
-explicit handoff.
 
 ## Release boundary
 
@@ -29,7 +27,8 @@ Python 3.10 or newer is required. Install the complete public workflow with:
 python -m pip install -e ".[all]"
 ```
 
-The `diagnostic` and `treatment` extras can instead be installed separately.
+The `diagnostic`, `survival`, and `treatment` extras can instead be installed
+separately.
 
 ## Diagnostic workflow
 
@@ -69,6 +68,23 @@ External BrainVLM training can be launched with `scripts/train_brainvlm.sh`.
 The caller must supply `BRAINVLM_SOURCE_ROOT`, `BRAINVLM_CHECKPOINT`,
 `BRAINVLM_TRAIN_SCRIPT`, and `BRAINVLM_TRAIN_CONFIG`.
 
+## Survival workflow
+
+The Survival Agent is implemented in `midline_agent/survival`. It pools
+patient-level BrainVLM hidden features using either all valid slices or T1CE
+keyframes, compresses the 4096-dimensional representation with a regularized
+autoencoder, estimates risk and survival functions with a random survival
+forest, and calibrates median overall survival with an accelerated failure time
+model.
+
+`MidlineOrchestrator` accepts a configured `survival_workflow` callable or
+object with a `run` method. The workflow receives the case input and validated
+diagnostic result and returns a `SurvivalResult` containing a finite risk score,
+positive median survival time, and a non-increasing survival curve. The result
+is validated before it is supplied to the Treatment Agent or persisted in the
+privacy-minimized trace. Fitted model checkpoints remain external to this
+repository and must be supplied by the deployment.
+
 ## Treatment and orchestration
 
 Set `OPENAI_API_KEY` and `OPENAI_MODEL` for the official OpenAI service. Custom
@@ -86,7 +102,10 @@ midline-run \
   --output CASE_TRACE
 ```
 
-The Treatment Agent accepts only injected evidence providers. No guideline
+The orchestrator executes each configured sub-agent in order and does not
+silently replace failed predictions. If a runtime model or checkpoint is not
+configured, that step is recorded as unavailable. The Treatment Agent accepts
+only injected evidence providers. No guideline
 corpus, case database, or web cache is bundled. The optional OpenAI web-search
 provider uses the same official Responses client. Reports validate source IDs
 against collected evidence before rendering.
@@ -99,5 +118,6 @@ privacy review and retention controls.
 
 - `docs/data-schema.md` defines annotations, split files, artifacts, and traces.
 - `docs/external-brainvlm-adapter.md` defines the external model boundary.
+- `docs/survival-agent.md` defines the Survival workflow contract.
 - `docs/treatment-providers.md` defines evidence-provider requirements.
 - `THIRD_PARTY_NOTICES.md` records the external dependency boundary.

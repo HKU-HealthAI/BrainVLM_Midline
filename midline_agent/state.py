@@ -250,6 +250,16 @@ def _diagnostic_trace_result(result: DiagnosticResult) -> dict[str, Any]:
     }
 
 
+def _survival_trace_result(result: SurvivalResult) -> dict[str, Any]:
+    return {
+        "risk_score": result.risk_score,
+        "median_survival_time": result.median_survival_time,
+        "time_points": result.time_points,
+        "survival_probabilities": result.survival_probabilities,
+        "provenance": _trace_provenance(result.provenance),
+    }
+
+
 def _treatment_trace_result(result: TreatmentResult) -> dict[str, Any]:
     evidence = []
     for item in result.evidence:
@@ -302,8 +312,17 @@ class CaseState:
             raise ValueError(
                 "completed treatment requires a completed or unavailable diagnostic result"
             )
+        if self.treatment.status.state == "completed" and self.survival.status.state not in {
+            "completed",
+            "unavailable",
+        }:
+            raise ValueError(
+                "completed treatment requires a completed or unavailable survival result"
+            )
         if self.treatment.status.state != "pending" and self.diagnostic.status.state == "pending":
             raise ValueError("terminal treatment requires diagnostic completion")
+        if self.treatment.status.state != "pending" and self.survival.status.state == "pending":
+            raise ValueError("terminal treatment requires survival completion")
 
     @classmethod
     def from_input(cls, case_input: CaseInput) -> "CaseState":
@@ -311,7 +330,7 @@ class CaseState:
             schema_version="1.0",
             case_input=case_input,
             diagnostic=DiagnosticResult.pending(),
-            survival=SurvivalResult.unavailable(),
+            survival=SurvivalResult.pending(),
             treatment=TreatmentResult.pending(),
         )
 
@@ -329,6 +348,17 @@ class CaseState:
         if self.treatment.status.state != "pending":
             raise ValueError("cannot change diagnosis after treatment has started")
         return replace(self, diagnostic=result)
+
+    def with_survival(self, result: SurvivalResult) -> "CaseState":
+        if not isinstance(result, SurvivalResult):
+            raise TypeError("result must be a SurvivalResult")
+        if self.diagnostic.status.state == "pending":
+            raise ValueError("cannot run survival before diagnosis")
+        if self.survival.status.state != "pending":
+            raise ValueError("cannot change survival after it has finished")
+        if self.treatment.status.state != "pending":
+            raise ValueError("cannot change survival after treatment has started")
+        return replace(self, survival=result)
 
     def with_treatment(self, result: TreatmentResult) -> "CaseState":
         if not isinstance(result, TreatmentResult):
@@ -352,7 +382,13 @@ class CaseState:
                 probabilities=self.diagnostic.probabilities,
             ),
             survival_status=survival_status,
-            survival_result=SurvivalResult(status=survival_status),
+            survival_result=SurvivalResult(
+                status=survival_status,
+                risk_score=self.survival.risk_score,
+                median_survival_time=self.survival.median_survival_time,
+                time_points=self.survival.time_points,
+                survival_probabilities=self.survival.survival_probabilities,
+            ),
         )
 
     def to_trace(self) -> CaseTrace:
@@ -365,7 +401,11 @@ class CaseState:
                     _trace_status(self.diagnostic.status),
                     _diagnostic_trace_result(self.diagnostic),
                 ),
-                StepRecord("survival", _trace_status(self.survival.status)),
+                StepRecord(
+                    "survival",
+                    _trace_status(self.survival.status),
+                    _survival_trace_result(self.survival),
+                ),
                 StepRecord(
                     "treatment",
                     _trace_status(self.treatment.status),

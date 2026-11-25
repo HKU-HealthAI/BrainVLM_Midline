@@ -122,13 +122,66 @@ class DiagnosticResult:
 @dataclass(frozen=True)
 class SurvivalResult:
     status: StepStatus
+    risk_score: float | None = None
+    median_survival_time: float | None = None
+    time_points: tuple[float, ...] = ()
+    survival_probabilities: tuple[float, ...] = ()
+    provenance: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, StepStatus):
             raise TypeError("survival status must be a StepStatus")
+        risk_score = None if self.risk_score is None else float(self.risk_score)
+        median_survival_time = (
+            None if self.median_survival_time is None else float(self.median_survival_time)
+        )
+        time_points = tuple(float(value) for value in self.time_points)
+        probabilities = tuple(float(value) for value in self.survival_probabilities)
+        if risk_score is not None and not math.isfinite(risk_score):
+            raise ValueError("survival risk_score must be finite")
+        if median_survival_time is not None and (
+            not math.isfinite(median_survival_time) or median_survival_time <= 0
+        ):
+            raise ValueError("median_survival_time must be finite and positive")
+        if not all(math.isfinite(value) and value >= 0 for value in time_points):
+            raise ValueError("survival time_points must be finite and non-negative")
+        if any(current >= following for current, following in zip(time_points, time_points[1:])):
+            raise ValueError("survival time_points must be strictly increasing")
+        if len(time_points) != len(probabilities):
+            raise ValueError("survival time_points and probabilities must have equal length")
+        if not all(math.isfinite(value) and 0 <= value <= 1 for value in probabilities):
+            raise ValueError("survival probabilities must be finite values in [0, 1]")
+        if any(current < following for current, following in zip(probabilities, probabilities[1:])):
+            raise ValueError("survival probabilities must be non-increasing")
+        if self.status.state == "completed" and (
+            risk_score is None
+            or median_survival_time is None
+            or not time_points
+        ):
+            raise ValueError(
+                "completed survival requires risk_score, median_survival_time, and a survival curve"
+            )
+        if self.status.state != "completed" and (
+            risk_score is not None
+            or median_survival_time is not None
+            or time_points
+            or probabilities
+        ):
+            raise ValueError("non-completed survival results cannot contain predictions")
+        if not isinstance(self.provenance, Mapping):
+            raise TypeError("survival provenance must be a mapping")
+        object.__setattr__(self, "risk_score", risk_score)
+        object.__setattr__(self, "median_survival_time", median_survival_time)
+        object.__setattr__(self, "time_points", time_points)
+        object.__setattr__(self, "survival_probabilities", probabilities)
+        object.__setattr__(self, "provenance", freeze_json(self.provenance))
 
     @classmethod
-    def unavailable(cls, reason: str = "Survival Agent is not included in this release") -> "SurvivalResult":
+    def pending(cls) -> "SurvivalResult":
+        return cls(status=StepStatus("pending"))
+
+    @classmethod
+    def unavailable(cls, reason: str = "no survival workflow configured") -> "SurvivalResult":
         return cls(status=StepStatus("unavailable", reason))
 
 

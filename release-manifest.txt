@@ -7,6 +7,7 @@ configs/attention_mil.example.yaml
 configs/brainvlm_training.example.yaml
 docs/data-schema.md
 docs/external-brainvlm-adapter.md
+docs/survival-agent.md
 docs/treatment-providers.md
 midline_agent/__init__.py
 midline_agent/datasets/__init__.py
@@ -28,6 +29,10 @@ midline_agent/diagnostic/workflow.py
 midline_agent/orchestrator.py
 midline_agent/schema.py
 midline_agent/state.py
+midline_agent/survival/__init__.py
+midline_agent/survival/aft.py
+midline_agent/survival/dim_reduction.py
+midline_agent/survival/rsf.py
 midline_agent/treatment/__init__.py
 midline_agent/treatment/agent.py
 midline_agent/treatment/client.py

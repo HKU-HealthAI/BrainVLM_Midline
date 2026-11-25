@@ -26,7 +26,7 @@ def test_case_state_starts_with_pending_steps_in_workflow_order() -> None:
     state = CaseState.from_input(CaseInput(case_id="synthetic-1"))
 
     assert state.diagnostic.status.state == "pending"
-    assert state.survival.status.state == "unavailable"
+    assert state.survival.status.state == "pending"
     assert state.treatment.status.state == "pending"
     assert [record.step for record in state.step_records] == ["diagnostic", "survival", "treatment"]
 
@@ -135,6 +135,42 @@ def test_completed_diagnostic_accepts_categorical_or_coherent_probabilities() ->
     assert sum(probabilistic.probabilities) == pytest.approx(1.0)
 
 
+def test_completed_survival_requires_a_coherent_curve() -> None:
+    with pytest.raises(ValueError, match="requires"):
+        SurvivalResult(status=StepStatus("completed"))
+    with pytest.raises(ValueError, match="equal length"):
+        SurvivalResult(
+            status=StepStatus("completed"),
+            risk_score=1.0,
+            median_survival_time=18.0,
+            time_points=(6.0, 12.0),
+            survival_probabilities=(0.8,),
+        )
+    with pytest.raises(ValueError, match="non-increasing"):
+        SurvivalResult(
+            status=StepStatus("completed"),
+            risk_score=1.0,
+            median_survival_time=18.0,
+            time_points=(6.0, 12.0),
+            survival_probabilities=(0.7, 0.8),
+        )
+
+
+def test_completed_survival_accepts_valid_predictions() -> None:
+    result = SurvivalResult(
+        status=StepStatus("completed"),
+        risk_score=1.0,
+        median_survival_time=18.0,
+        time_points=(6.0, 12.0),
+        survival_probabilities=(0.8, 0.6),
+        provenance={"model_identifier": "survival-v1"},
+    )
+
+    assert result.time_points == (6.0, 12.0)
+    assert result.survival_probabilities == (0.8, 0.6)
+    assert result.provenance["model_identifier"] == "survival-v1"
+
+
 def test_treatment_input_rejects_non_contract_results() -> None:
     status = StepStatus("pending")
 
@@ -162,6 +198,8 @@ def test_treatment_projection_has_upstream_results_but_no_mri_manifest() -> None
             who_grade="grade_3",
             provenance={"input_path": "/synthetic-storage/TREATMENT_MRI_PATH_SENTINEL/t1.npy"},
         )
+    ).with_survival(
+        SurvivalResult.unavailable("survival checkpoint unavailable")
     )
 
     projection = state.to_treatment_input()
@@ -373,6 +411,16 @@ def _valid_completed_diagnostic() -> DiagnosticResult:
     )
 
 
+def _valid_completed_survival() -> SurvivalResult:
+    return SurvivalResult(
+        status=StepStatus("completed"),
+        risk_score=1.0,
+        median_survival_time=18.0,
+        time_points=(6.0, 12.0),
+        survival_probabilities=(0.8, 0.6),
+    )
+
+
 @pytest.mark.parametrize("member", ["case_input", "diagnostic", "survival", "treatment"])
 def test_case_state_validates_member_types(member: str) -> None:
     values = {
@@ -403,13 +451,25 @@ def test_case_state_rejects_completed_treatment_without_usable_diagnosis() -> No
             )
 
 
+def test_case_state_rejects_completed_treatment_after_failed_survival() -> None:
+    with pytest.raises(ValueError, match="completed treatment"):
+        CaseState(
+            schema_version="1.0",
+            case_input=CaseInput(case_id="synthetic-1"),
+            diagnostic=_valid_completed_diagnostic(),
+            survival=SurvivalResult(status=StepStatus("failed", "prediction failed")),
+            treatment=TreatmentResult.empty(),
+        )
+
+
 def test_case_state_transitions_diagnostic_before_treatment_monotonically() -> None:
     initial = CaseState.from_input(CaseInput(case_id="synthetic-1"))
     diagnosed = initial.with_diagnostic(_valid_completed_diagnostic())
-    treated = diagnosed.with_treatment(TreatmentResult.empty())
+    survived = diagnosed.with_survival(_valid_completed_survival())
+    treated = survived.with_treatment(TreatmentResult.empty())
 
     assert treated.diagnostic.status.state == "completed"
-    assert treated.survival.status.state == "unavailable"
+    assert treated.survival.status.state == "completed"
     assert treated.treatment.status.state == "completed"
     with pytest.raises(ValueError, match="after treatment"):
         treated.with_diagnostic(DiagnosticResult.unavailable("replacement"))
@@ -418,6 +478,8 @@ def test_case_state_transitions_diagnostic_before_treatment_monotonically() -> N
 def test_completed_treatment_allows_intentionally_unavailable_diagnosis_and_survival() -> None:
     state = CaseState.from_input(CaseInput(case_id="synthetic-1")).with_diagnostic(
         DiagnosticResult.unavailable("adapter not configured")
+    ).with_survival(
+        SurvivalResult.unavailable("survival model not configured")
     )
 
     treated = state.with_treatment(TreatmentResult.empty())
@@ -430,6 +492,8 @@ def test_completed_treatment_allows_intentionally_unavailable_diagnosis_and_surv
 def test_with_treatment_rejects_completed_result_after_failed_diagnosis() -> None:
     state = CaseState.from_input(CaseInput(case_id="synthetic-1")).with_diagnostic(
         DiagnosticResult(status=StepStatus("failed", "inference failed"))
+    ).with_survival(
+        SurvivalResult.unavailable("upstream diagnosis failed")
     )
 
     with pytest.raises(ValueError, match="completed treatment"):
@@ -490,6 +554,15 @@ def test_case_trace_is_ordered_serializable_and_minimized() -> None:
                 "patient_name": "PROVENANCE_IDENTIFIER_SENTINEL",
             },
         )
+    ).with_survival(
+        SurvivalResult(
+            status=StepStatus("completed"),
+            risk_score=1.25,
+            median_survival_time=18.0,
+            time_points=(6.0, 12.0, 24.0),
+            survival_probabilities=(0.9, 0.7, 0.4),
+            provenance={"model_identifier": "survival-model-v1"},
+        )
     ).with_treatment(
         TreatmentResult(
             status=StepStatus("failed", "provider unavailable"),
@@ -514,6 +587,9 @@ def test_case_trace_is_ordered_serializable_and_minimized() -> None:
     assert [record.step for record in trace.steps] == ["diagnostic", "survival", "treatment"]
     assert trace.steps[0].result["tumor_type"] == "tumor_4"
     assert trace.steps[0].result["provenance"]["model_identifier"].startswith("sha256:")
+    assert trace.steps[1].result["median_survival_time"] == 18.0
+    assert trace.steps[1].result["survival_probabilities"] == (0.9, 0.7, 0.4)
+    assert trace.steps[1].result["provenance"]["model_identifier"].startswith("sha256:")
     assert trace.steps[2].status.state == "failed"
     assert trace.steps[2].result["evidence"][0]["source_id"] == "source-1"
     for sensitive_value in (
@@ -560,6 +636,8 @@ def test_evidence_contract_rejects_unsafe_identifiers_and_urls(
 def test_treatment_cannot_mutate_diagnostic_result() -> None:
     diagnosed = CaseState.from_input(CaseInput(case_id="synthetic-1")).with_diagnostic(
         DiagnosticResult.unavailable("missing checkpoint")
+    ).with_survival(
+        SurvivalResult.unavailable("missing survival checkpoint")
     )
 
     treated = diagnosed.with_treatment(TreatmentResult.empty())
