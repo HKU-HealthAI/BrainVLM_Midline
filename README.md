@@ -1,12 +1,17 @@
-# BrainVLM Midline
+# MidlineAgent
 
-BrainVLM Midline is research code for a traceable midline glioma workflow. It
-connects a BrainVLM slice model, an AttentionMIL patient-level classifier, a
-tumor-conditioned WHO-grade vote, a multimodal Survival Agent, and an
-evidence-grounded Treatment Agent. This release provides the complete source
-code for the Diagnostic, Survival, and Treatment Agents. A hybrid orchestrator
-enforces the Diagnostic -> Survival -> Treatment order in Python and uses the
-official OpenAI Responses API for validated handoffs and report synthesis.
+MidlineAgent is a multi-agent research framework for traceable clinical
+decision support in midline glioma. It coordinates Diagnostic, Survival, and
+Treatment Sub-Agents through a hybrid LLM Orchestrator. The Diagnostic
+Sub-Agent integrates BrainVLM-Midline, AttentionMIL, and tumor-conditioned
+WHO-grade prediction; the Survival Sub-Agent performs multimodal prognosis
+modelling; and the Treatment Sub-Agent produces evidence-grounded treatment
+reports.
+
+This release provides the complete source code for the Diagnostic, Survival,
+and Treatment Sub-Agents. The orchestrator enforces the Diagnostic -> Survival
+-> Treatment order in Python and uses the official OpenAI Responses API for
+validated handoffs and report synthesis.
 
 ## Table of Contents
 
@@ -14,9 +19,9 @@ official OpenAI Responses API for validated handoffs and report synthesis.
 - [Installation](#installation)
 - [Prepare model weights](#prepare-model-weights)
 - [Prepare test data files](#prepare-test-data-files)
-- [Diagnostic workflow](#diagnostic-workflow)
-- [Survival workflow](#survival-workflow)
-- [Treatment and orchestration](#treatment-and-orchestration)
+- [Diagnostic Sub-Agent](#diagnostic-sub-agent)
+- [Survival Sub-Agent](#survival-sub-agent)
+- [Treatment Sub-Agent and LLM Orchestrator](#treatment-sub-agent-and-llm-orchestrator)
 - [Contracts](#contracts)
 - [Acknowledgement](#acknowledgement)
 
@@ -44,10 +49,11 @@ separately.
 
 ## Prepare model weights
 
-BrainVLM Midline uses the same Llama and vision-encoder foundations as the
-related BrainVLM project, together with project-specific diagnostic weights
-and a patient-level MIL model. Download the required assets separately; model
-weights are not stored in this repository.
+The MidlineAgent Diagnostic Sub-Agent uses Llama 3.1-8B Instruct and BiomedCLIP
+foundations through the related BrainVLM project, together with the
+BrainVLM-Midline diagnostic model, tumor-conditioned WHO Grading, and
+AttentionMIL for patient-level aggregation. Download the required assets
+separately; model weights are not stored in this repository.
 
 | Model | Purpose | Download | Configuration |
 | --- | --- | --- | --- |
@@ -94,7 +100,7 @@ underscores, periods, colons, or hyphens. When present, `clinical_facts` must be
 a JSON object and `mri_manifest` must be a JSON array of objects. Their values
 must be finite and JSON-compatible.
 
-## Diagnostic workflow
+## Diagnostic Sub-Agent
 
 The external BrainVLM integration uses a narrow factory contract and never
 copies the external source or checkpoint into this repository. See
@@ -132,9 +138,9 @@ External BrainVLM training can be launched with `scripts/train_brainvlm.sh`.
 The caller must supply `BRAINVLM_SOURCE_ROOT`, `BRAINVLM_CHECKPOINT`,
 `BRAINVLM_TRAIN_SCRIPT`, and `BRAINVLM_TRAIN_CONFIG`.
 
-## Survival workflow
+## Survival Sub-Agent
 
-The Survival Agent is implemented in `midline_agent/survival`. It pools
+The Survival Sub-Agent is implemented in `midline_agent/survival`. It pools
 patient-level BrainVLM hidden features using either all valid slices or T1CE
 keyframes, compresses the 4096-dimensional representation with a regularized
 autoencoder, estimates risk and survival functions with a random survival
@@ -145,11 +151,11 @@ model.
 object with a `run` method. The workflow receives the case input and validated
 diagnostic result and returns a `SurvivalResult` containing a finite risk score,
 positive median survival time, and a non-increasing survival curve. The result
-is validated before it is supplied to the Treatment Agent or persisted in the
-privacy-minimized trace. Fitted model checkpoints remain external to this
+is validated before it is supplied to the Treatment Sub-Agent or persisted in
+the privacy-minimized trace. Fitted model checkpoints remain external to this
 repository and must be supplied by the deployment.
 
-## Treatment and orchestration
+## Treatment Sub-Agent and LLM Orchestrator
 
 Set `OPENAI_API_KEY` and `OPENAI_MODEL` for the official OpenAI service. Custom
 API endpoints are not supported. Run the integrated workflow with:
@@ -166,13 +172,13 @@ midline-run \
   --output CASE_TRACE
 ```
 
-The orchestrator executes each configured sub-agent in order and does not
+The LLM Orchestrator executes each configured Sub-Agent in order and does not
 silently replace failed predictions. If a runtime model or checkpoint is not
-configured, that step is recorded as unavailable. The Treatment Agent accepts
-only injected evidence providers. No guideline
-corpus, case database, or web cache is bundled. The optional OpenAI web-search
-provider uses the same official Responses client. Reports validate source IDs
-against collected evidence before rendering.
+configured, that step is recorded as unavailable. The Treatment Sub-Agent
+accepts only injected evidence providers. No guideline corpus, case database,
+or web cache is bundled. The optional OpenAI web-search provider uses the same
+official Responses client. Reports validate source IDs against collected
+evidence before rendering.
 
 Persisted traces hash the case identifier and omit MRI paths, raw clinical
 text, evidence excerpts, and URLs. Deployments remain responsible for local
@@ -191,8 +197,9 @@ privacy review and retention controls.
 The related [BrainVLM](https://github.com/HKU-HealthAI/BrainVLM) project builds
 on [MiniGPT-4](https://github.com/Vision-CAIR/MiniGPT-4) and uses
 [Llama 3.1-8B Instruct](#prepare-model-weights) and
-[BiomedCLIP](#prepare-model-weights). BrainVLM Midline integrates BrainVLM
-through the external adapter boundary defined in this repository. Orchestration
-and treatment-report synthesis use the official OpenAI Python SDK and
+[BiomedCLIP](#prepare-model-weights).
+MidlineAgent integrates BrainVLM through the external adapter boundary defined
+in this repository. Orchestration and treatment-report synthesis use the
+official OpenAI Python SDK and
 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses).
 We thank the developers and maintainers of these projects and resources.
