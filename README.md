@@ -8,6 +8,18 @@ code for the Diagnostic, Survival, and Treatment Agents. A hybrid orchestrator
 enforces the Diagnostic -> Survival -> Treatment order in Python and uses the
 official OpenAI Responses API for validated handoffs and report synthesis.
 
+## Table of Contents
+
+- [Release boundary](#release-boundary)
+- [Installation](#installation)
+- [Prepare model weights](#prepare-model-weights)
+- [Prepare test data files](#prepare-test-data-files)
+- [Diagnostic workflow](#diagnostic-workflow)
+- [Survival workflow](#survival-workflow)
+- [Treatment and orchestration](#treatment-and-orchestration)
+- [Contracts](#contracts)
+- [Acknowledgement](#acknowledgement)
+
 ## Release boundary
 
 This repository contains code and configuration templates only. It does not
@@ -29,6 +41,26 @@ python -m pip install -e ".[all]"
 
 The `diagnostic`, `survival`, and `treatment` extras can instead be installed
 separately.
+
+## Prepare model weights
+
+BrainVLM Midline uses the same Llama and vision-encoder foundations as the
+related BrainVLM project, together with project-specific diagnostic weights
+and a patient-level MIL model. Download the required assets separately; model
+weights are not stored in this repository.
+
+| Model | Purpose | Download | Configuration |
+| --- | --- | --- | --- |
+| Llama 3.1-8B Instruct | Language-model backbone used by BrainVLM | [Hugging Face](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) | Configure in the external BrainVLM checkout as described by the [BrainVLM project](https://github.com/HKU-HealthAI/BrainVLM). |
+| BiomedCLIP | Vision encoder used by BrainVLM | [Hugging Face](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224) | Loaded by the external BrainVLM implementation. |
+| BrainVLM-Midline | Midline glioma diagnosis and slice-feature extraction | [Google Drive](https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link) | Pass to the external adapter with `--checkpoint`. |
+| WHO Grading | Tumor-conditioned WHO-grade prediction | [Google Drive](https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link) | Use with a compatible external BrainVLM adapter or the original WHO-grade evaluation pipeline. The public CLI does not expose a separate WHO-checkpoint argument. |
+| MIL | Patient-level aggregation of slice predictions | [Google Drive](https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link) | Supply through `--attention-mil-checkpoint`; the artifact must satisfy the public checkpoint contract in `docs/data-schema.md`. |
+
+Access to Llama 3.1 and BiomedCLIP remains subject to their respective license
+and model-access terms. The external BrainVLM source checkout is also required
+for `--source-root` and must provide the adapter described in
+`docs/external-brainvlm-adapter.md`.
 
 ## Diagnostic workflow
 
