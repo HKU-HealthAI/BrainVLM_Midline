@@ -293,29 +293,29 @@ git commit -m "refactor: use internal BrainVLM-Midline runtime"
 - Create: `tests/diagnostic/test_brainvlm_datasets.py`
 - Create: `tests/fixtures/brainvlm_training/annotations.json`
 
-- [ ] **Step 1: Write failing seeded fixture tests**
+- [x] **Step 1: Write failing seeded fixture tests**
 
 Cover JSON object and JSONL inputs; `figure`; `who_class`/`WHO_class`; `who_grade`; `age`/`Age`; path containment; decodable images; finite age; canonical labels; WHO filtering to tumors 2, 4, and 5; three/four instruction pools; deterministic prompt selection; 224-pixel preprocessing; threshold upsampling counts; consistent patient labels; and reproducible 80:20 WHO/tumor stream schedules.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_datasets.py`
 
 Expected: FAIL because task datasets are missing.
 
-- [ ] **Step 3: Implement strict record parsing and datasets**
+- [x] **Step 3: Implement strict record parsing and datasets**
 
 Extract only the valid classification behavior from `tcia_classification_who` and `just_who_grade`. Do not copy recursive corrupt-image fallback, silent defaults, caption paths, segmentation, unrelated datasets, or private paths. Return typed task samples consumed by the collator.
 
-- [ ] **Step 4: Implement deterministic mixing and collation**
+- [x] **Step 4: Implement deterministic mixing and collation**
 
 Build seeded samplers for class upsampling and WHO 80:20 auxiliary mixing. The collator must reject mixed tensor shapes, missing targets, and non-finite images before model invocation.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 6: Commit training data support**
+- [x] **Step 6: Commit training data support**
 
 ```bash
 git add midline_agent/diagnostic/brainvlm_midline/datasets.py midline_agent/diagnostic/brainvlm_midline/collate.py tests/diagnostic/test_brainvlm_datasets.py tests/fixtures/brainvlm_training

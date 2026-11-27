@@ -81,6 +81,8 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/model.py` | `99c80b08c752b6a9414901ebddac44416dc60074cd49289dc225d9ec84f963be` | Clean behavioral reimplementation; MIT |
 | `midline_agent/diagnostic/checkpoints.py` | `79ad8650a061498d6f4075721f9d7bf1aa7b412189125bc26955bdaae07380a2` | Existing MIT implementation extended with strict BrainVLM-Midline loading |
 | `midline_agent/diagnostic/brainvlm_runtime.py` | `93577ef1a5e71ba84ce820d3c738af103a7526973f460efc4fc7c6dcfef4e28e` | Internal model runtime replacing source-checkout loading; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `aca32c3f46a29c163ffca87c8091644bb1bf3b8b3c514149ec7324046a7f84fa` | Clean behavioral reimplementation of tumor and WHO dataset contracts; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/collate.py` | `8d0f41daf705386e65ca2ad482055be38aaa51133128fc82a95e95d93d4ce381` | New strict task collator; MIT |
 
 ## License Files
 
