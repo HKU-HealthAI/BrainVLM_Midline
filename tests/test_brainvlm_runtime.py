@@ -219,6 +219,7 @@ def test_tumor_inference_normalizes_image_and_returns_five_finite_logits(tmp_pat
     assert observed.shape == (3, 224, 224)
     expected_corner = (torch.tensor([0.0, 64 / 255, 128 / 255]) - torch.tensor(BIOMEDCLIP_MEAN)) / torch.tensor(BIOMEDCLIP_STD)
     torch.testing.assert_close(observed[:, 0, 0], expected_corner)
+    assert "USER:Please predict the WHO classification for this patient" in model.seen_prompts[0]
     assert model.seen_prompts[0].endswith("ASSISTANT:<tumor_")
 
 

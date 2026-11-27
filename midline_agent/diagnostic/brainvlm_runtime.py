@@ -27,8 +27,9 @@ BIOMEDCLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
 BIOMEDCLIP_STD = (0.26862954, 0.26130258, 0.27577711)
 TUMOR_PROMPT = (
     "You are a language vision assistant. Based on the MRI image<ImageHere>, question, and context, "
-    "please give an appropriate tumor choice among WHO tumor classification labels. USER:What is the "
-    "WHO classification for this patient? Context:This is WHO tumor classification label: "
+    "please give an appropriate tumor choice among WHO tumor classification labels. USER:Please predict "
+    "the WHO classification for this patient based on the MRI image. Context:This is WHO tumor "
+    "classification label: "
     "'H3K27M-mutated midline glioma': '<tumor_1>', 'Pediatric-type diffuse glioma': '<tumor_2>', "
     "'IDH-wildtype glioblastoma': '<tumor_3>', 'IDH-mutated astrocytoma': '<tumor_4>', "
     "'IDH-mutated oligodendroglioma': '<tumor_5>' ASSISTANT:<tumor_"
