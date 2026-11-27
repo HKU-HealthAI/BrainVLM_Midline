@@ -108,7 +108,7 @@ def _validate_labeled_boundary(
     keyframe_labels: list[int | None] = []
     resolved_root = Path(image_root).resolve()
 
-    for index, (raw, record) in enumerate(zip(raw_records, records, strict=True)):
+    for index, (raw, record) in enumerate(zip(raw_records, records)):
         patient_id = raw["patient_id"]
         image_path = Path(record.image_path).resolve()
         try:
@@ -178,12 +178,14 @@ def _extract_store(
     label: int | None,
     keyframe_labels: tuple[int | None, ...],
 ) -> dict[str, object]:
+    if len(case.slices) != len(keyframe_labels):
+        raise ValueError("case slices and keyframe labels have different lengths")
     logits: list[torch.Tensor] = []
     hidden: list[torch.Tensor] = []
     slice_ids: list[str] = []
     modalities: list[int] = []
     slice_metadata: list[dict[str, object]] = []
-    for item, keyframe_label in zip(case.slices, keyframe_labels, strict=True):
+    for item, keyframe_label in zip(case.slices, keyframe_labels):
         features = runtime.predict_slice_features(item.image_path, item)
         logits.append(features.logits)
         hidden.append(features.hidden)

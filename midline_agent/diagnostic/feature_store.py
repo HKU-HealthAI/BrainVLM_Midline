@@ -137,7 +137,7 @@ def _validate_extraction_slices(patient_id: str, patient: Mapping[str, Any]) -> 
     inverse_modalities = {value: name for name, value in EXTRACTION_MODALITY_MAP.items()}
     identities: list[tuple[int, int]] = []
     for row, (slice_id, modality_index, slice_metadata) in enumerate(
-        zip(patient["slice_ids"], patient["modalities"], patient["slice_metadata"], strict=True)
+        zip(patient["slice_ids"], patient["modalities"], patient["slice_metadata"])
     ):
         if not isinstance(slice_metadata, Mapping):
             raise FeatureSchemaError(f"patient {patient_id} slice_metadata row {row} must be a mapping")
@@ -223,7 +223,7 @@ def validate_feature_store(store: Any) -> None:
             raise FeatureSchemaError(f"patient {patient_id} must contain at least one valid slice")
         if any(type(value) is not int or value not in modality_values | {-1} for value in modalities):
             raise FeatureSchemaError(f"patient {patient_id} contains an unsupported modality")
-        if any(valid and modality not in modality_values for valid, modality in zip(valid_mask, modalities, strict=True)):
+        if any(valid and modality not in modality_values for valid, modality in zip(valid_mask, modalities)):
             raise FeatureSchemaError(f"patient {patient_id} contains an invalid active modality")
         if len(set(slice_ids)) != rows or any(not isinstance(value, str) or not value for value in slice_ids):
             raise FeatureSchemaError(f"patient {patient_id} slice_ids must be unique non-empty strings")
