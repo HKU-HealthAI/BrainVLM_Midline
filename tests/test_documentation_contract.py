@@ -71,6 +71,7 @@ def test_readme_is_self_contained_and_documents_public_workflow_boundaries() -> 
         "BrainVLM-Midline is one internal Diagnostic Sub-Agent model",
         "modified training and inference source",
         "does not call another source checkout",
+        "No BrainVLM or MiniGPT-4 source checkout is required",
         "30 selected 2D MRI slices",
         "No diagnostic labels or results are bundled",
         "midline-predict-tumor",
@@ -80,6 +81,8 @@ def test_readme_is_self_contained_and_documents_public_workflow_boundaries() -> 
         "midline-train-brainvlm",
         "midline-run",
         "midline_agent.survival",
+        "No pretrained Survival checkpoint is required or loaded",
+        "Patient-level imaging features and survival outcomes are not distributed",
         "EvidenceProvider",
         "outside the Git checkout",
         "official OpenAI Responses API",
@@ -91,6 +94,8 @@ def test_readme_is_self_contained_and_documents_public_workflow_boundaries() -> 
     assert "BRAINVLM" + "_SOURCE" not in readme
     assert "PACKAGE.MODULE:FACTORY" not in readme
     assert "The reference labels for BT0156" not in readme
+    assert "Fitted models and patient-level training data" not in readme
+    assert "fitted-model locations" not in readme
     assert "/secure/" not in readme
 
 

@@ -52,10 +52,11 @@ host instead of assuming one CUDA package index works everywhere.
 
 ## Model assets
 
-Prepare Llama 3.1-8B Instruct and BiomedCLIP in the same roles used by the
-related BrainVLM work. Llama access is subject to Meta's license and model
-terms. BiomedCLIP access is subject to its model card and applicable terms.
-No additional project source repository is needed.
+Prepare Llama 3.1-8B Instruct and BiomedCLIP as the language and vision
+backbones required by the internal BrainVLM-Midline implementation. Llama
+access is subject to Meta's license and model terms. BiomedCLIP access is
+subject to its model card and applicable terms. No BrainVLM or MiniGPT-4
+source checkout is required.
 
 | Asset | Role | Location |
 | --- | --- | --- |
@@ -238,15 +239,15 @@ recorded as unavailable. The command never substitutes a different predictor.
 
 ## Survival Sub-Agent
 
-The public Survival implementation is in `midline_agent.survival`. It exposes
-feature aggregation, regularized autoencoder compression, random survival
-forest fitting/prediction, and accelerated failure-time calibration. Fitted
-models and patient-level training data are caller-owned and remain outside the
-repository.
+The public Survival implementation is in `midline_agent.survival`. It fits the
+regularized autoencoder, random survival forest, and accelerated failure-time
+model from caller-provided training cohorts. No pretrained Survival checkpoint
+is required or loaded. Patient-level imaging features and survival outcomes
+are not distributed with this repository.
 
 There is no public Survival command that guesses a deployment's data schema or
-fitted-model locations. Construct a callable or object with a `run` method and
-inject it explicitly:
+training-cohort locations. Construct a callable or object with a `run` method
+and inject it explicitly:
 
 ```python
 from midline_agent.orchestrator import MidlineOrchestrator
