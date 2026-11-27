@@ -14,12 +14,23 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+TRACE_PATH_ARGUMENTS = (
+    "annotations",
+    "image_root",
+    "case_json",
+    "llama_model",
+    "biomedclip_pretrained",
+    "tumor_checkpoint",
+    "mil_checkpoint",
+    "who_checkpoint",
+    "output",
+)
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--annotations", type=Path, required=True)
-    parser.add_argument("--images", type=Path, required=True)
+    parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--case-json", type=Path, required=True)
     parser.add_argument("--llama-model", type=Path, required=True)
     parser.add_argument("--biomedclip-pretrained")
@@ -83,6 +94,54 @@ def _assert_installed_module_origins() -> None:
         raise AssertionError("no midline_agent modules were loaded")
 
 
+def _json_strings(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, dict):
+        strings = tuple(str(key) for key in value)
+        return strings + tuple(
+            item
+            for child in value.values()
+            for item in _json_strings(child)
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(item for child in value for item in _json_strings(child))
+    return ()
+
+
+def _argument_variants(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    raw = os.fspath(value)
+    variants = {raw, str(Path(raw).expanduser().resolve())}
+    return tuple(sorted((item for item in variants if item), key=len, reverse=True))
+
+
+def _assert_trace_privacy(
+    serialized: str,
+    args: argparse.Namespace,
+    raw_case_id: str,
+) -> None:
+    try:
+        trace_strings = _json_strings(json.loads(serialized))
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise AssertionError("trace is not valid privacy-minimized JSON") from exc
+    inspectable_strings = tuple(
+        value for value in trace_strings if not value.startswith("sha256:")
+    )
+    forbidden = {"raw_generation", "https://", raw_case_id}
+    for field in TRACE_PATH_ARGUMENTS:
+        forbidden.update(_argument_variants(getattr(args, field, None)))
+    for candidate in forbidden:
+        if not candidate:
+            continue
+        if any(
+            value == candidate or (len(candidate) >= 4 and candidate in value)
+            for value in inspectable_strings
+        ):
+            raise AssertionError("trace is not privacy-minimized")
+
+
 def _write_json_atomic(output: Path, payload: object) -> None:
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +193,7 @@ def main() -> int:
         clinical_facts=payload["clinical_facts"],
         mri_manifest=tuple(payload["mri_manifest"]),
     )
-    inference_case = load_inference_case(args.annotations, args.images)
+    inference_case = load_inference_case(args.annotations, args.image_root)
     tumor_runtime = BrainVlmRuntime.load(
         args.llama_model,
         args.tumor_checkpoint,
@@ -200,15 +259,7 @@ def main() -> int:
     if [step.status.state for step in trace.steps] != ["completed", "completed", "completed"]:
         raise AssertionError("orchestrator did not complete all injected acceptance stages")
     serialized = json.dumps(trace_payload, sort_keys=True, allow_nan=False)
-    for forbidden in (
-        "raw_generation",
-        "https://",
-        str(args.images),
-        str(args.llama_model),
-        str(args.output),
-    ):
-        if forbidden in serialized:
-            raise AssertionError("trace contains non-minimized diagnostic data")
+    _assert_trace_privacy(serialized, args, payload["case_id"])
     _assert_installed_module_origins()
     _write_json_atomic(output, trace_payload)
     return 0

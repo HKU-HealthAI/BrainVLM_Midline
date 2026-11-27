@@ -316,7 +316,7 @@ def test_installed_diagnostic_acceptance_runner_help() -> None:
     assert completed.returncode == 0, completed.stderr
     for flag in (
         "--annotations",
-        "--images",
+        "--image-root",
         "--case-json",
         "--llama-model",
         "--biomedclip-pretrained",
@@ -329,3 +329,157 @@ def test_installed_diagnostic_acceptance_runner_help() -> None:
         "--expected-grade",
     ):
         assert flag in completed.stdout
+    assert "--images" not in completed.stdout
+
+
+def test_installed_diagnostic_acceptance_parser_uses_public_image_root_contract(
+    tmp_path: Path,
+) -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    image_root = tmp_path / "public-images"
+    args = acceptance._parser().parse_args(
+        [
+            "--annotations",
+            str(tmp_path / "annotations.json"),
+            "--image-root",
+            str(image_root),
+            "--case-json",
+            str(tmp_path / "case.json"),
+            "--llama-model",
+            str(tmp_path / "llama"),
+            "--tumor-checkpoint",
+            str(tmp_path / "tumor.pth"),
+            "--mil-checkpoint",
+            str(tmp_path / "mil.pth"),
+            "--who-checkpoint",
+            str(tmp_path / "who.pth"),
+            "--device",
+            "cuda:0",
+            "--output",
+            str(tmp_path / "trace.json"),
+            "--expected-tumor",
+            "tumor_4",
+            "--expected-grade",
+            "grade_3",
+        ]
+    )
+
+    assert args.image_root == image_root
+    assert not hasattr(args, "images")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "annotations",
+        "image_root",
+        "case_json",
+        "llama_model",
+        "biomedclip_pretrained",
+        "tumor_checkpoint",
+        "mil_checkpoint",
+        "who_checkpoint",
+        "output",
+    ],
+)
+def test_installed_diagnostic_trace_privacy_rejects_every_caller_path(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    args = argparse.Namespace(
+        annotations=tmp_path / "ANNOTATIONS_PATH_SENTINEL.json",
+        image_root=tmp_path / "IMAGE_ROOT_SENTINEL",
+        case_json=tmp_path / "CASE_JSON_PATH_SENTINEL.json",
+        llama_model=tmp_path / "LLAMA_MODEL_PATH_SENTINEL",
+        biomedclip_pretrained=str(tmp_path / "BIOMEDCLIP_PATH_SENTINEL.bin"),
+        tumor_checkpoint=tmp_path / "TUMOR_CHECKPOINT_PATH_SENTINEL.pth",
+        mil_checkpoint=tmp_path / "MIL_CHECKPOINT_PATH_SENTINEL.pth",
+        who_checkpoint=tmp_path / "WHO_CHECKPOINT_PATH_SENTINEL.pth",
+        output=tmp_path / "OUTPUT_PATH_SENTINEL.json",
+    )
+
+    with pytest.raises(AssertionError, match="privacy-minimized"):
+        acceptance._assert_trace_privacy(
+            json.dumps({"leaked": str(getattr(args, field))}),
+            args,
+            "BT0156",
+        )
+
+
+def test_installed_diagnostic_trace_privacy_rejects_raw_case_id_but_allows_hashes(
+    tmp_path: Path,
+) -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    args = argparse.Namespace(
+        annotations=tmp_path / "annotations.json",
+        image_root=tmp_path / "images",
+        case_json=tmp_path / "case.json",
+        llama_model=tmp_path / "llama",
+        biomedclip_pretrained=None,
+        tumor_checkpoint=tmp_path / "tumor.pth",
+        mil_checkpoint=tmp_path / "mil.pth",
+        who_checkpoint=tmp_path / "who.pth",
+        output=tmp_path / "trace.json",
+    )
+
+    with pytest.raises(AssertionError, match="privacy-minimized"):
+        acceptance._assert_trace_privacy(
+            '{"case_id": "BT0156"}',
+            args,
+            "BT0156",
+        )
+    acceptance._assert_trace_privacy(
+        '{"case_id": "sha256:dfdd0df7d995b51f"}',
+        args,
+        "BT0156",
+    )
+
+
+def test_installed_diagnostic_trace_privacy_does_not_match_paths_inside_hashes() -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    args = argparse.Namespace(
+        annotations=Path("dead"),
+        image_root=None,
+        case_json=None,
+        llama_model=None,
+        biomedclip_pretrained=None,
+        tumor_checkpoint=None,
+        mil_checkpoint=None,
+        who_checkpoint=None,
+        output=None,
+    )
+
+    acceptance._assert_trace_privacy(
+        '{"model_identifier": "sha256:deadbeef0123456789"}',
+        args,
+        "BT0156",
+    )
+
+
+def test_installed_diagnostic_trace_privacy_rejects_resolved_relative_path() -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    relative = Path("relative-annotation-sentinel.json")
+    args = argparse.Namespace(
+        annotations=relative,
+        image_root=None,
+        case_json=None,
+        llama_model=None,
+        biomedclip_pretrained=None,
+        tumor_checkpoint=None,
+        mil_checkpoint=None,
+        who_checkpoint=None,
+        output=None,
+    )
+
+    with pytest.raises(AssertionError, match="privacy-minimized"):
+        acceptance._assert_trace_privacy(
+            json.dumps({"leaked": str(relative.resolve())}),
+            args,
+            "BT0156",
+        )
