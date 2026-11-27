@@ -35,6 +35,7 @@ midline_agent/diagnostic/brainvlm_adapter.py
 midline_agent/diagnostic/brainvlm_midline/__init__.py
 midline_agent/diagnostic/brainvlm_midline/config.py
 midline_agent/diagnostic/brainvlm_midline/prompts.py
+midline_agent/diagnostic/brainvlm_midline/vision.py
 midline_agent/diagnostic/brainvlm_runtime.py
 midline_agent/diagnostic/checkpoints.py
 midline_agent/diagnostic/feature_store.py
@@ -106,6 +107,7 @@ test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/conftest.py
 tests/diagnostic/test_brainvlm_config.py
 tests/diagnostic/test_brainvlm_prompts.py
+tests/diagnostic/test_brainvlm_vision.py
 tests/test_annotations.py
 tests/test_attention_mil.py
 tests/test_brainvlm_bridge.py

@@ -153,27 +153,27 @@ git commit -m "feat: define internal BrainVLM-Midline contract"
 - Create: `tests/diagnostic/test_brainvlm_vision.py`
 - Modify: `midline_agent/datasets/brainvlm.py`
 
-- [ ] **Step 1: Write failing preprocessing tests**
+- [x] **Step 1: Write failing preprocessing tests**
 
 Test bicubic 224-pixel RGB conversion, BiomedCLIP mean/std normalization, CHW float32 output, finite-value checks, local pretrained override handling, the final normalization hook, CLS removal, 196-patch mean pooling, and the 768-dimensional low-resolution result. Inject a tiny fake OpenCLIP trunk so CPU tests do not download weights.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_vision.py`
 
 Expected: FAIL because `vision.py` is missing.
 
-- [ ] **Step 3: Implement the minimal vision unit**
+- [x] **Step 3: Implement the minimal vision unit**
 
 Construct `hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224` through installed `open_clip`, register and remove the final-norm hook safely, validate the captured shape, and expose `preprocess_image()` plus `encode_low_resolution()`.
 
-- [ ] **Step 4: Verify focused and existing image tests**
+- [x] **Step 4: Verify focused and existing image tests**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_vision.py tests/test_mri_dataset.py`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit vision support**
+- [x] **Step 5: Commit vision support**
 
 ```bash
 git add midline_agent/diagnostic/brainvlm_midline/vision.py midline_agent/datasets/brainvlm.py tests/diagnostic/test_brainvlm_vision.py
@@ -520,7 +520,7 @@ Explain BrainVLM-Midline as an internally implemented Diagnostic Sub-Agent model
 
 - [ ] **Step 4: Add complete notices and runtime documentation**
 
-Document annotation fields, model assets, training scope, checkpoint hashes, feature schema, supported commands, and intentional exclusions. Include full license texts and precise attribution without presenting unrelated baseline implementations.
+Document annotation fields, model assets, training scope, checkpoint hashes, feature schema, supported commands, and intentional exclusions. Include full license texts and precise attribution without presenting unrelated comparison implementations.
 
 - [ ] **Step 5: Remove obsolete external-boundary documents**
 
@@ -808,7 +808,7 @@ Use `superpowers:requesting-code-review` with the approved specification, this p
 
 - [ ] **Step 5: Confirm release boundary**
 
-Verify the repository contains source, documentation, configuration templates, notices, and the attributed BT0156 images only. It must not contain private treatment evidence, internal databases, credentials, checkpoints, generated features, predictions, result files, comparison baselines, or any dependency on another project-source checkout.
+Verify the repository contains source, documentation, configuration templates, notices, and the attributed BT0156 images only. It must not contain private treatment evidence, internal databases, credentials, checkpoints, generated features, predictions, result files, comparison implementations, or any dependency on another project-source checkout.
 
 - [ ] **Step 6: Leave remote publication to the user-controlled handoff**
 

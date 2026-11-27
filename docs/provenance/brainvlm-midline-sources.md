@@ -76,6 +76,7 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/__init__.py` | `7c979b8c88c8c6a36b9075d3af15b499c6489570d396b92bc043904203f4dfc1` | New package export; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/config.py` | `8650e78ee32f82242fc4689d35c9427ebf64e4dd1d0dd8bc3a2acfb342cc8978` | Clean behavioral reimplementation; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/prompts.py` | `3e3c5c9aa8195d585ecb0e76511621b9ff296f840a7da37dc890f2835b43f1be` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/vision.py` | `ba87b977ee6eae8c56ea2eb9bc385ff8c75c6d9ef6de29a48415410dd928a8b9` | Clean behavioral reimplementation; MIT |
 
 ## License Files
 
