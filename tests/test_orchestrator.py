@@ -165,20 +165,21 @@ def test_orchestrator_requests_structured_handoff_before_treatment() -> None:
 
 def test_injected_treatment_evidence_is_retained_in_memory_but_minimized_in_trace() -> None:
     source = EvidenceItem(
-        "opaque-source-1",
+        "private-source-id-sentinel",
         "similar_case",
         excerpt="PRIVATE_EVIDENCE_SENTINEL",
         url="https://private.invalid/source",
-        source_name="Deployment-owned source",
+        source_name="PRIVATE_SOURCE_NAME_SENTINEL",
         retrieval_status="verified",
-        applicability="Relevant to the supplied tumor context.",
+        applicability="PRIVATE_APPLICABILITY_SENTINEL",
+        limitations="PRIVATE_LIMITATIONS_SENTINEL",
     )
 
     class EvidenceClient(SuccessfulClient):
         def generate(self, request):
             response = super().generate(request)
             if request.schema_name == "midline_treatment_report":
-                response.parsed["evidence"] = ["opaque-source-1"]
+                response.parsed["evidence"] = ["private-source-id-sentinel"]
             return response
 
     state = MidlineOrchestrator(
@@ -190,9 +191,28 @@ def test_injected_treatment_evidence_is_retained_in_memory_but_minimized_in_trac
     assert state.treatment.status.state == "completed"
     assert state.treatment.evidence == (source,)
     assert "PRIVATE_EVIDENCE_SENTINEL" in state.treatment.evidence[0].excerpt
-    serialized_trace = str(to_jsonable(state.to_trace()))
-    assert "PRIVATE_EVIDENCE_SENTINEL" not in serialized_trace
-    assert "private.invalid" not in serialized_trace
+    trace = state.to_trace()
+    assert trace.steps[-1].result == {
+        "evidence": (
+            {
+                "source_id": "source-1",
+                "source_kind": "similar_case",
+                "retrieval_status": "verified",
+                "applicability": "specified",
+            },
+        ),
+        "provenance": {},
+    }
+    serialized_trace = str(to_jsonable(trace))
+    for private_value in (
+        "private-source-id-sentinel",
+        "PRIVATE_EVIDENCE_SENTINEL",
+        "private.invalid",
+        "PRIVATE_SOURCE_NAME_SENTINEL",
+        "PRIVATE_APPLICABILITY_SENTINEL",
+        "PRIVATE_LIMITATIONS_SENTINEL",
+    ):
+        assert private_value not in serialized_trace
 
 
 def test_orchestrator_returns_failed_partial_state_on_client_error() -> None:

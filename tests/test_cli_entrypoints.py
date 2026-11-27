@@ -29,6 +29,7 @@ def test_pipeline_runner_exposes_no_custom_openai_endpoint() -> None:
 
 def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
     root = Path(__file__).resolve().parents[1]
+    source = (root / "scripts/run_pipeline.py").read_text(encoding="utf-8")
     completed = subprocess.run(
         [sys.executable, "scripts/run_pipeline.py", "--help"],
         cwd=root,
@@ -40,6 +41,13 @@ def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
     assert "--internal-case-db" not in completed.stdout
     assert "--private-evidence-root" not in completed.stdout
     assert "--treatment-provider" not in completed.stdout
+    for discovery_token in (
+        "INTERNAL_CASE_DB",
+        "PRIVATE_EVIDENCE",
+        "TREATMENT_PROVIDER",
+        "/secure/midlineagent",
+    ):
+        assert discovery_token not in source
 
 
 def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
@@ -317,6 +325,13 @@ def test_public_docs_define_private_treatment_evidence_boundary() -> None:
     assert "trusted in-process" in provider_docs
     assert "does not sandbox" in provider_docs
     assert "non-identifying opaque source IDs" in provider_docs
+    normalized_readme = " ".join(readme.split())
+    normalized_provider_docs = " ".join(provider_docs.split())
+    assert "cannot reproduce private-database retrieval or the report quality" in normalized_readme
+    assert "Provider-issued source IDs are sent verbatim" in normalized_provider_docs
+    assert "does not reproduce the full private evidence-grounding behavior" in normalized_provider_docs
+    assert "does not sandbox a provider or terminate its daemon thread" in normalized_provider_docs
+    assert "Before persistence, call `CaseState.to_trace()`" in normalized_provider_docs
 
 
 def test_data_schema_separates_label_free_inference_from_training_labels() -> None:
