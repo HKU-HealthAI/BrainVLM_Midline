@@ -100,8 +100,8 @@ behavior instead.
 | `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `5240a6865f36747225cb458082a35ec502441ad0b388bd3dc29c17fac627a8a2` | Clean behavioral reimplementation of tumor and WHO dataset contracts; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/collate.py` | `3fafddb8b3a9a74dec005bd73e37d3bed2b734e1602dd94f87ff9afb8da0e974` | New strict task collator; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/training.py` | `88b65ff70668d84f3f3cf6e5060d0fd1f68496e63e1fdef89913975c99069aa7` | Clean focused training implementation; MIT |
-| `midline_agent/diagnostic/feature_store.py` | `9045ecc3b9cfb440aadebf6f43efa511b2b77522b060e1555812c802dd791b93` | Existing MIT feature store extended with the internal extraction schema |
-| `scripts/extract_features.py` | `a407839577cb0cb8014c7fc1e543074eed5532d395d8625f5b1bb414a28c19f0` | Internal BrainVLM-Midline feature extraction command; MIT |
+| `midline_agent/diagnostic/feature_store.py` | `e77afa18c70fb691165ca1c4201ca311f9b4584d8ac3b8883ce1d2f44371871c` | Existing MIT feature store extended with the internal extraction schema |
+| `scripts/extract_features.py` | `846595da4d877cfa839947cd1fcac7a44f424f6b2bbd819d88a365cc90439ead` | Internal BrainVLM-Midline feature extraction command; MIT |
 | `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
 | `scripts/predict_tumor.py` | `ad9bc821b944dba20527e1bb810bb67a9a9817bcecb6282a6eb396a411b7af4f` | Internal BrainVLM-Midline tumor command; MIT |
 | `scripts/predict_who_grade.py` | `db1e514fec5ff40275fef4327f268b8ef01faedf985a41cc73f4d827a48e8fb9` | Internal BrainVLM-Midline WHO grading command; MIT |
