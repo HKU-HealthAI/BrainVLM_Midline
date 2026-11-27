@@ -140,6 +140,7 @@ tests/test_mri_dataset.py
 tests/test_orchestrator.py
 tests/test_packaging_contract.py
 tests/test_public_case.py
+tests/test_python39_compatibility.py
 tests/test_release_audit.py
 tests/test_schema.py
 tests/test_standalone_diagnostic.py

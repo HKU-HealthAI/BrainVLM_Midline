@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -51,29 +50,27 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path,
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-    import build
-
-    build_tools = Path(build.__file__).resolve().parents[1]
-    environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(build_tools)
-    environment.pop("BRAINVLM_SOURCE", None)
-    environment.pop("BRAINVLM_SOURCE_ROOT", None)
     distribution_root = work_root / "dist"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--no-isolation",
-            "--outdir",
-            str(distribution_root),
-        ],
-        cwd=source_root,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
+    distribution_root.mkdir()
+    backend_command = (
+        "import sys\n"
+        "from setuptools import build_meta\n"
+        "getattr(build_meta, sys.argv[1])(sys.argv[2])\n"
     )
+    for hook in ("build_sdist", "build_wheel"):
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                backend_command,
+                hook,
+                str(distribution_root),
+            ],
+            cwd=source_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
     wheels = list(distribution_root.glob("*.whl"))
     source_archives = list(distribution_root.glob("*.tar.gz"))
