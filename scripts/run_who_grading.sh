@@ -3,7 +3,6 @@ set -euo pipefail
 
 : "${ANNOTATIONS:?Set ANNOTATIONS to the label-free patient JSON file}"
 : "${IMAGE_ROOT:?Set IMAGE_ROOT to the directory containing the referenced images}"
-: "${BRAINVLM_SOURCE:?Set BRAINVLM_SOURCE to a BrainVLM checkout}"
 : "${LLAMA_MODEL:?Set LLAMA_MODEL to the Llama 3.1-8B Instruct directory}"
 : "${WHO_CHECKPOINT:?Set WHO_CHECKPOINT to the WHO Grading checkpoint}"
 : "${OUTPUT_JSON:?Set OUTPUT_JSON to the destination result JSON}"
@@ -16,7 +15,6 @@ repository_root="$(cd -- "$script_dir/.." && pwd)"
 arguments=(
   --annotations "$ANNOTATIONS"
   --image-root "$IMAGE_ROOT"
-  --brainvlm-source "$BRAINVLM_SOURCE"
   --llama-model "$LLAMA_MODEL"
   --checkpoint "$WHO_CHECKPOINT"
   --output "$OUTPUT_JSON"
@@ -26,7 +24,7 @@ arguments=(
 if [[ -n "${TUMOR_TYPE:-}" ]]; then
   arguments+=(--tumor-type "$TUMOR_TYPE")
 else
-  TUMOR_RESULT="${TUMOR_RESULT:-tumor_prediction.json}"
+  : "${TUMOR_RESULT:?Set TUMOR_RESULT or set TUMOR_TYPE explicitly}"
   arguments+=(--tumor-result "$TUMOR_RESULT")
 fi
 

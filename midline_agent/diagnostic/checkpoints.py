@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import pickle
 import re
 from pathlib import Path
 from typing import Any, Mapping
@@ -59,6 +60,78 @@ SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 class CheckpointError(ValueError):
     pass
+
+
+class BrainVlmCheckpointError(ValueError):
+    """Raised when a BrainVLM-Midline trainable checkpoint is incompatible."""
+
+
+def _peft_target_name(name: str, expected: Mapping[str, torch.Tensor]) -> str | None:
+    if name in expected:
+        return name
+    for marker in (".lora_A.weight", ".lora_B.weight"):
+        if marker in name:
+            candidate = name.replace(marker, marker.replace(".weight", ".default.weight"))
+            if candidate in expected:
+                return candidate
+    return None
+
+
+def load_brainvlm_checkpoint(
+    path: Path,
+    model: torch.nn.Module,
+    *,
+    manifest: Mapping[str, tuple[int, ...]] | None = None,
+) -> tuple[str, ...]:
+    """Strictly validate and load the released trainable-only checkpoint."""
+    if manifest is None:
+        from .brainvlm_midline.config import CHECKPOINT_MANIFEST
+
+        manifest = CHECKPOINT_MANIFEST
+    checkpoint_path = Path(path)
+    if not checkpoint_path.is_file():
+        raise BrainVlmCheckpointError("BrainVLM checkpoint path must be a file")
+    try:
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location="cpu",
+            weights_only=True,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, pickle.UnpicklingError) as exc:
+        raise BrainVlmCheckpointError("unable to read BrainVLM checkpoint") from exc
+    if not isinstance(checkpoint, Mapping) or not isinstance(checkpoint.get("model"), Mapping):
+        raise BrainVlmCheckpointError("BrainVLM checkpoint is missing the model mapping")
+    state = checkpoint["model"]
+    missing = sorted(set(manifest) - set(state))
+    if missing:
+        raise BrainVlmCheckpointError(f"BrainVLM checkpoint is missing tensor: {missing[0]}")
+    unexpected = sorted(set(state) - set(manifest))
+    if unexpected:
+        raise BrainVlmCheckpointError(f"BrainVLM checkpoint contains unexpected tensor: {unexpected[0]}")
+
+    expected = model.state_dict()
+    translated: dict[str, torch.Tensor] = {}
+    for name in sorted(manifest):
+        tensor = state[name]
+        if not isinstance(tensor, torch.Tensor):
+            raise BrainVlmCheckpointError(f"BrainVLM checkpoint value {name} is not a tensor")
+        if tuple(tensor.shape) != tuple(manifest[name]):
+            raise BrainVlmCheckpointError(f"BrainVLM checkpoint tensor {name} has an incompatible shape")
+        if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
+            raise BrainVlmCheckpointError(f"BrainVLM checkpoint tensor {name} must be finite")
+        target = _peft_target_name(name, expected)
+        if target is None:
+            raise BrainVlmCheckpointError(f"model does not expose checkpoint tensor {name}")
+        if tuple(expected[target].shape) != tuple(tensor.shape):
+            raise BrainVlmCheckpointError(f"model tensor {name} has an incompatible shape")
+        translated[target] = tensor
+    try:
+        incompatible = model.load_state_dict(translated, strict=False)
+    except RuntimeError as exc:
+        raise BrainVlmCheckpointError("BrainVLM checkpoint tensors could not be loaded") from exc
+    if incompatible.unexpected_keys:
+        raise BrainVlmCheckpointError("BrainVLM checkpoint produced unexpected model tensors")
+    return tuple(sorted(state))
 
 
 def _require_path(path: Path) -> None:

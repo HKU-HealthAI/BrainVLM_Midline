@@ -1,0 +1,123 @@
+# BrainVLM-Midline Source Provenance
+
+## Purpose
+
+This inventory records the source material inspected while creating the
+self-contained BrainVLM-Midline implementation. It is a pre-copy ownership
+gate: no non-trivial source text may enter the release unless its origin,
+copyright holder, license, and modifications are recorded here first.
+
+The historical local MiniGPT-4 research tree is not an independent Git
+checkout. Its containing repository reported the tree as untracked, so there
+is no defensible local source revision. This inventory therefore records
+immutable SHA-256 digests for the exact local files and does not invent a Git
+lineage. Embedded notices identify known upstream BSD-3-Clause material from
+MiniGPT-4 and LAVIS, but the project-specific modifications have no defensible
+Git lineage or independently established license. Consequently, uncertain
+local code is excluded from this release.
+
+The official [MiniGPT-4 repository](https://github.com/Vision-CAIR/MiniGPT-4)
+was independently inspected at revision
+`d94738a7626ec43eba6c2cddf3cd2043f1a9689a`; that immutable revision is an
+upstream reference, not a claim that the modified local tree exactly descends
+from it. The official [LAVIS repository](https://github.com/salesforce/LAVIS)
+was independently inspected at revision
+`05cb670f47296522e24e7727e366b4a997d28582`.
+
+The HKU-HealthAI [BrainVLM
+repository](https://github.com/HKU-HealthAI/BrainVLM) identifies the related
+project as *A Vision-Language Foundation Model for Comprehensive Brain Tumor
+Diagnosis from Preoperative Multimodal Data* by Yinong Wang et al. Its README
+states that the project builds on MiniGPT-4. BrainVLM is cited only as related
+work and as a related repository. No license is inferred for BrainVLM because
+no license was identified at the repository root during this source review.
+No code expression from BrainVLM is included. For the local project-specific
+work, only behavior and checkpoint observations informed a clean MIT
+reimplementation.
+
+## Ownership Rule
+
+Project-specific prompts, task behavior, state names, and workflow contracts
+are reimplemented from documented behavior and checkpoint observations. New
+implementation text authored for this repository is covered by the repository
+MIT license and attributed to MidlineAgent contributors. It is not a verbatim
+copy of the historical research files. Known upstream BSD-3-Clause material is
+identified below; all uncertain local code is excluded rather than relicensed.
+
+If numerical parity later requires retained source text from MiniGPT-4 or
+LAVIS, the released file must carry a prominent modification notice and the
+applicable BSD-3-Clause notice before commit. If parity requires retained code
+from the local Llama implementation, the released file must carry its original
+Hugging Face and EleutherAI copyright header, an Apache-2.0 modification
+notice, and a completed inventory row before commit. Material with uncertain
+ownership or an unidentified license must be excluded and reimplemented from
+behavior instead.
+
+## Local Source Digests
+
+| Local source path | SHA-256 | Declared origin and license | Use in release |
+| --- | --- | --- | --- |
+| `minigpt4/models/minigpt4.py` | `4688da6ff638ba6160e3c8fdbd61a2a9ea47dc9d46bb030a3475f01d3330c4ae` | Embedded notice identifies MiniGPT-4 BSD-3-Clause material, copyright 2023 Deyao Zhu; local modifications have no independently established license | Uncertain source text excluded; architecture and state-layout behavior only |
+| `minigpt4/models/minigpt_base.py` | `fc6ce17024e9c5ee602b11bdf65d38f11866b9a5750c10b706936817ee786bd8` | Embedded notice identifies MiniGPT-4 BSD-3-Clause material, copyright 2023 Deyao Zhu; local modifications have no independently established license | Uncertain source text excluded; prompt wrapping, supervised input, and generation behavior only |
+| `minigpt4/models/base_model.py` | `1ec55a1c764bf45244ac34f7dfc91c332c04a24d2300f350a197612d5a8ff907` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; autocast and model utility behavior only |
+| `minigpt4/models/modeling_llama.py` | `04e3d6636b33534e72443c3387eaa490b2821f252f9c4cebbffc1b9ad9565af9` | Local adaptation with no defensible lineage or independently established license | Source text excluded; loss-reduction behavior only |
+| `minigpt4/models/modelling_llama_source.py` | `8df5eae8ed5d3219a1b8e894fc587fe75741c80f2dce1b7c68ec29bd06103219` | Headers identify Hugging Face and EleutherAI Apache-2.0 material; local modification status is not established | Source text excluded; potential parity behavior reference only |
+| `minigpt4/datasets/datasets/caption_datasets.py` | `1dd4fffbf27966d7f1d26b524226b183e4757b8b36ef1d7a44d77a15288e4d0d` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; tumor and WHO dataset behavior only |
+| `minigpt4/common/optims.py` | `0b6dc7e70464a24c47594598298cbbae516557053855bc1a0cc17b78f92a86d3` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modification status is not established | Source text excluded; scheduler behavior only |
+| `minigpt4/runners/runner_base.py` | `bb1377f8910bd7e8f3c7621702ffdb53f29ec2531333072e53fa5209dbeef402` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; optimizer, checkpoint, and resume behavior only |
+| `minigpt4/tasks/base_task.py` | `2050b156d642cf253f4d1761a66495141efe3adbde927f68d36dde764cf61904` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; AMP and accumulation behavior only |
+| `train.py` | `6bf702df2188215a32d071137fb0be12fce0fb957bd265fb43cbe8809413b453` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; seed and distributed-launch behavior only |
+
+## Final Release Mapping
+
+| Released path | Source material | Final modification | Holder and release license |
+| --- | --- | --- | --- |
+| `midline_agent/diagnostic/brainvlm_midline/config.py` | Approved public design and checkpoint manifest | New strict dataclasses and validators | MidlineAgent contributors; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/prompts.py` | Historical runtime prompts and the two dataset classes in `caption_datasets.py` | Clean English-only canonical prompt and label implementation | MidlineAgent contributors; MIT, with MiniGPT-4 and LAVIS acknowledged |
+| `midline_agent/diagnostic/brainvlm_midline/vision.py` | `minigpt4.py` and dataset preprocessing behavior | Clean dependency-injected OpenCLIP implementation | MidlineAgent contributors; MIT, with MiniGPT-4 and LAVIS acknowledged |
+| `midline_agent/diagnostic/brainvlm_midline/llama.py` | `minigpt_base.py`, `modeling_llama.py`, and installed Transformers 4.46.3 APIs | Clean wrapper around installed Transformers and PEFT | MidlineAgent contributors; MIT; Transformers remains an Apache-2.0 dependency |
+| `midline_agent/diagnostic/brainvlm_midline/model.py` | `minigpt4.py` and `minigpt_base.py` behavior | Clean focused model assembly preserving checkpoint names | MidlineAgent contributors; MIT, with MiniGPT-4 acknowledged |
+| `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `tcia_classification_who` and `just_who_grade` behavior | Clean strict parser with historical silent fallbacks removed | MidlineAgent contributors; MIT, with LAVIS acknowledged |
+| `midline_agent/diagnostic/brainvlm_midline/collate.py` | Valid sample shapes observed in the dataset classes | New strict collator | MidlineAgent contributors; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/training.py` | LAVIS optimizer, scheduler, AMP, and checkpoint behavior | Clean focused training implementation without historical integrations | MidlineAgent contributors; MIT, with LAVIS acknowledged |
+| `midline_agent/diagnostic/brainvlm_runtime.py` | Existing MidlineAgent bridge and approved internal contract | Replace external loading with direct internal construction | MidlineAgent contributors; MIT |
+| `midline_agent/diagnostic/feature_store.py` | Existing MidlineAgent feature store and approved extraction contract | Extended with strict internal-model logits and hidden-feature schema | MidlineAgent contributors; MIT |
+| `scripts/extract_features.py` | Existing MidlineAgent extraction command and approved internal runtime contract | Rewired to the internal runtime with explicit label-free and labelled modes | MidlineAgent contributors; MIT |
+| `scripts/train_brainvlm_midline.py` | Approved training contract | New focused command | MidlineAgent contributors; MIT |
+
+### Implemented Release Digests
+
+| Released path | SHA-256 | Derivation status |
+| --- | --- | --- |
+| `midline_agent/diagnostic/brainvlm_midline/__init__.py` | `7c979b8c88c8c6a36b9075d3af15b499c6489570d396b92bc043904203f4dfc1` | New package export; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/config.py` | `8650e78ee32f82242fc4689d35c9427ebf64e4dd1d0dd8bc3a2acfb342cc8978` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/prompts.py` | `3e3c5c9aa8195d585ecb0e76511621b9ff296f840a7da37dc890f2835b43f1be` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/vision.py` | `ba87b977ee6eae8c56ea2eb9bc385ff8c75c6d9ef6de29a48415410dd928a8b9` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/llama.py` | `9eb4265e30cd4fc811bfacf9a787e2e12590836d628e09b009a89569cadfeec3` | Clean wrapper around installed Transformers and PEFT; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/model.py` | `99c80b08c752b6a9414901ebddac44416dc60074cd49289dc225d9ec84f963be` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/checkpoints.py` | `79ad8650a061498d6f4075721f9d7bf1aa7b412189125bc26955bdaae07380a2` | Existing MIT implementation extended with strict BrainVLM-Midline loading |
+| `midline_agent/diagnostic/brainvlm_runtime.py` | `93577ef1a5e71ba84ce820d3c738af103a7526973f460efc4fc7c6dcfef4e28e` | Internal model runtime replacing source-checkout loading; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `5240a6865f36747225cb458082a35ec502441ad0b388bd3dc29c17fac627a8a2` | Clean behavioral reimplementation of tumor and WHO dataset contracts; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/collate.py` | `3fafddb8b3a9a74dec005bd73e37d3bed2b734e1602dd94f87ff9afb8da0e974` | New strict task collator; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/training.py` | `8d1db7d6b0e73df8f6ad067797d34ec7776c635c6fc8b22c146afd0cee00e735` | Clean focused training implementation; MIT |
+| `midline_agent/diagnostic/feature_store.py` | `e77afa18c70fb691165ca1c4201ca311f9b4584d8ac3b8883ce1d2f44371871c` | Existing MIT feature store extended with the internal extraction schema |
+| `scripts/extract_features.py` | `846595da4d877cfa839947cd1fcac7a44f424f6b2bbd819d88a365cc90439ead` | Internal BrainVLM-Midline feature extraction command; MIT |
+| `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
+| `scripts/predict_tumor.py` | `ad9bc821b944dba20527e1bb810bb67a9a9817bcecb6282a6eb396a411b7af4f` | Internal BrainVLM-Midline tumor command; MIT |
+| `scripts/predict_who_grade.py` | `db1e514fec5ff40275fef4327f268b8ef01faedf985a41cc73f4d827a48e8fb9` | Internal BrainVLM-Midline WHO grading command; MIT |
+| `midline_agent/diagnostic/workflow.py` | `ae9752e1e027884a7b74008fb05c0bf3e1399bee5a7680da5833ae36fc8905d1` | Shared checkpoint-service Diagnostic workflow; MIT |
+| `midline_agent/orchestrator.py` | `046007060b715e4532cb9bb167d83c3b3130a36342b5cdc02785ad88c225253d` | Optional-Treatment orchestration for Diagnostic-only execution; MIT |
+| `scripts/run_pipeline.py` | `6fd4f92f082b2500b4394487aeec18729577c9bfc5148ba1c8399c779308cdfe` | Shared-service public orchestration command; MIT |
+| `scripts/run_tumor_prediction.sh` | `7972e31b476bf63c81d9de2234d8d656cdb774dd8303f9b98990267fd8013073` | Caller-configured tumor launcher; MIT |
+| `scripts/run_who_grading.sh` | `f5584fc9bb9b36031fa2ae647113d04b71671fa803086dbe86630a72336b4e4d` | Caller-configured WHO grading launcher; MIT |
+| `scripts/run_tumor_prediction.sbatch` | `c7fc45631a5ffa32f2812d2e77c2526c5fb9e30870930f6f80951168f77e5a5d` | Caller-owned Slurm tumor launcher; MIT |
+| `scripts/run_who_grading.sbatch` | `0eda9784eafa857ecd3720e27f1a989b09322e81615c31e5372a286588d2eec6` | Caller-owned Slurm WHO grading launcher; MIT |
+
+## License Files
+
+- `licenses/BSD-3-Clause-MiniGPT4.txt` contains the official MiniGPT-4
+  BSD-3-Clause terms and copyright notice.
+- `licenses/BSD-3-Clause-LAVIS.txt` contains the official LAVIS
+  BSD-3-Clause terms and copyright notice.
+- `licenses/Apache-2.0.txt` contains the complete Apache License 2.0 used by
+  Transformers and the potential Llama fallback.

@@ -74,7 +74,7 @@ def _selected_rows(patient_id: str, patient: Mapping, metadata: Mapping, mode: s
         if type(t1ce) is not int:
             raise SliceSelectionError("T1CE modality index must be an integer")
         # Keep valid T1CE slices first, then read keyframe_label. Other modalities need not have that label.
-        for index, (flag, modality, row) in enumerate(zip(keep, modalities, slice_metadata, strict=True)):
+        for index, (flag, modality, row) in enumerate(zip(keep, modalities, slice_metadata)):
             if not flag or modality != t1ce:
                 keep[index] = False
                 continue

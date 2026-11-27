@@ -44,11 +44,29 @@ file. Test cohorts are not accepted by the training command.
 ## Feature artifacts
 
 Feature stores use a `.safetensors` tensor file bound to a JSON sidecar by an
-artifact identifier and SHA-256 digest. The sidecar records schema and prompt
-versions, feature dimensions, modality indices, patient labels, masks, slice
-metadata, and tensor keys. Tensor shapes, dtypes, finite values, masks, and
-modality ranges are validated on write and read. Pickle-based feature files are
-not supported.
+artifact identifier and SHA-256 digest. Release extraction always writes the
+complete schema `1.0` `hidden_and_logits` profile: five float32 logits and 4096
+float32 hidden values per slice, the exact modality map `T1=0`, `T1CE=1`,
+`T2=2`, `FLAIR=3`, and the BrainVLM-Midline checkpoint SHA-256, prompt version,
+and preprocessing version. Slice rows are ordered by that modality order and
+then by slice index. Each row has the identity
+`patient_id:modality:slice_index`, a valid-mask value, and metadata containing
+the modality, slice index, and source-image SHA-256. Filesystem paths,
+generations, and prediction results are not stored.
+
+The default extraction mode accepts the strict label-free inference schema and
+does not write a patient label. The explicit labeled mode accepts one
+caller-owned patient with one consistent canonical label from `tumor_1`
+through `tumor_5` and stores the corresponding zero-based class integer.
+Tensor shapes, dtypes, finite values, labels, ordered identities, checksums,
+masks, and metadata are validated on write and read. Pickle-based feature files
+are not supported.
+
+The same caller-generated feature artifact is the input to AttentionMIL and
+the Survival Sub-Agent. AttentionMIL consumes its slice logits and hidden
+features; Survival consumes the hidden features and aligned slice metadata.
+Generated feature files contain caller data and model outputs, so none are
+bundled in this repository or its release artifacts.
 
 AttentionMIL checkpoints use the same bound safetensors-plus-JSON design. The
 sidecar records the exact model configuration, feature contract, modality map,

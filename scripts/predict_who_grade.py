@@ -5,26 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from midline_agent.datasets.inference_annotations import load_inference_case
 from midline_agent.diagnostic.brainvlm_runtime import BrainVlmRuntime
 from midline_agent.diagnostic.logits_mil import TUMOR_TYPES
 from midline_agent.diagnostic.standalone import WhoGradePredictionService
-from scripts.predict_tumor import _write_json_atomic
+from scripts.predict_tumor import _load_brainvlm_runtime, _write_json_atomic
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--annotations", type=Path, required=True, help="Label-free single-patient JSON")
     parser.add_argument("--image-root", type=Path, required=True, help="Root for annotation image paths")
-    parser.add_argument("--brainvlm-source", type=Path, required=True, help="External BrainVLM checkout")
     parser.add_argument("--llama-model", type=Path, required=True, help="Llama 3.1-8B Instruct directory")
     parser.add_argument("--checkpoint", type=Path, required=True, help="WHO Grading checkpoint")
     tumor_source = parser.add_mutually_exclusive_group(required=True)
@@ -60,8 +53,7 @@ def main() -> int:
     tumor_type = args.tumor_type or _tumor_type_from_result(args.tumor_result, case.patient_id)
 
     def runtime_factory() -> BrainVlmRuntime:
-        return BrainVlmRuntime.load(
-            args.brainvlm_source,
+        return _load_brainvlm_runtime(
             args.llama_model,
             args.checkpoint,
             device=args.device,

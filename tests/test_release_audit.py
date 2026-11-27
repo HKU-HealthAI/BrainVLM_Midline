@@ -1,6 +1,8 @@
 import json
+import struct
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,25 @@ from scripts.release_audit import audit_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_SCRIPT = PROJECT_ROOT / "scripts" / "release_audit.py"
+
+
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(data))
+        + chunk_type
+        + data
+        + struct.pack(">I", zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+    )
+
+
+def _valid_png_bytes() -> bytes:
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(b"\x00\x00"))
+        + _png_chunk(b"IEND", b"")
+    )
 
 
 def _codes(paths: list[Path]) -> set[str]:
@@ -198,6 +219,92 @@ def test_audit_rejects_result_and_environment_artifacts(tmp_path: Path, relative
     assert "forbidden-path" in _codes([path])
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "checkpoint/model.txt",
+        "features.json",
+        "feature.json",
+        "extracted_features.json",
+        "extracted_features.safetensors",
+    ],
+)
+def test_audit_rejects_singular_checkpoint_and_root_feature_artifacts(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    artifact = tmp_path / relative_path
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("generated\n", encoding="ascii")
+
+    assert "forbidden-path" in _codes([artifact])
+
+
+def test_audit_rejects_root_checkpoint_json(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint.json"
+    checkpoint.write_text("{}\n", encoding="ascii")
+
+    assert _codes([checkpoint]) == {"forbidden-path"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "checkpoint.txt",
+        "checkpoint.ini",
+        "model_checkpoint.yaml",
+        "checkpoint-state.toml",
+    ],
+)
+def test_audit_rejects_checkpoint_artifacts_across_data_suffixes(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    checkpoint = tmp_path / relative_path
+    checkpoint.write_text("generated\n", encoding="ascii")
+
+    assert _codes([checkpoint]) == {"forbidden-path"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "checkpoint.py",
+        "scripts/checkpoint.sh",
+        "docs/checkpoint.md",
+        "tests/test_checkpoint.py",
+    ],
+)
+def test_audit_allows_checkpoint_source_identifiers(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("Checkpoint source contract.\n", encoding="ascii")
+
+    assert audit_paths([source], root=tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "midline_agent/diagnostic/feature_store.py",
+        "docs/feature-schema.md",
+        "tests/test_feature_store.py",
+    ],
+)
+def test_audit_allows_feature_source_documentation_and_tests(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True)
+    source.write_text("Feature contract.\n", encoding="ascii")
+
+    assert audit_paths([source], root=tmp_path) == []
+
+
 def test_audit_rejects_secret_checkpoint_private_path_and_symlink(tmp_path: Path) -> None:
     secret_file = tmp_path / ".env"
     checkpoint = tmp_path / "weights.safetensors"
@@ -242,6 +349,41 @@ def test_audit_distinguishes_model_token_counts_from_credentials(tmp_path: Path)
     assert _codes([credential]) == {"embedded-secret"}
 
 
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("pad_token", '"$$"'),
+        ("bos_token", '"[BOS]"'),
+        ("eos_token", '"[EOS]"'),
+        ("unk_token", '"[UNK]"'),
+        ("mask_token", '"[MASK]"'),
+    ],
+)
+def test_audit_allows_model_vocabulary_token_literals(
+    tmp_path: Path,
+    field_name: str,
+    field_value: str,
+) -> None:
+    model_config = tmp_path / "model_config.py"
+    model_config.write_text(f"{field_name} = {field_value}\n", encoding="utf-8")
+
+    assert audit_paths([model_config]) == []
+
+
+@pytest.mark.parametrize("field_name", ["api_token", "access_token", "auth_token"])
+def test_audit_still_rejects_credential_token_literals(
+    tmp_path: Path,
+    field_name: str,
+) -> None:
+    credential = tmp_path / "credential.py"
+    credential.write_text(
+        f'{field_name} = "literal_abcdefghijklmnopqrstuvwxyz123456"\n',
+        encoding="utf-8",
+    )
+
+    assert _codes([credential]) == {"embedded-secret"}
+
+
 def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> None:
     artifact = tmp_path / "artifact.txt"
     artifact.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
@@ -252,7 +394,7 @@ def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> N
 def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_path: Path) -> None:
     allowed = tmp_path / "test_data" / "utsw_glioma_bt0156" / "images" / "t1_001.png"
     allowed.parent.mkdir(parents=True)
-    allowed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"fixture")
+    allowed.write_bytes(_valid_png_bytes())
 
     assert audit_paths([allowed], root=tmp_path) == []
 
@@ -269,6 +411,14 @@ def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_pa
     disguised = allowed.with_name("disguised.png")
     disguised.write_bytes(b"not a png")
     assert {item.code for item in audit_paths([disguised], root=tmp_path)} == {"binary-file"}
+
+    forged = allowed.with_name("forged.png")
+    forged.write_bytes(b"\x89PNG\r\n\x1a\n" + b"not-valid-chunks")
+    assert {item.code for item in audit_paths([forged], root=tmp_path)} == {"binary-file"}
+
+    corrupt = allowed.with_name("corrupt.png")
+    corrupt.write_bytes(_valid_png_bytes()[:-1] + b"x")
+    assert {item.code for item in audit_paths([corrupt], root=tmp_path)} == {"binary-file"}
 
 
 @pytest.mark.parametrize("style", ["quoted", "dotenv", "yaml"])
@@ -430,6 +580,7 @@ def test_audit_allows_ordinary_key_and_sensitive_environment_expression(tmp_path
         ("token_pattern", 'r"[A-Za-z]+"'),
         ("tokenizer", '"default"'),
         ("tokenization", '"wordpiece"'),
+        ("api_key_field", '"api_key"'),
     ],
 )
 def test_audit_allows_noncredential_sensitive_word_identifiers(
@@ -476,6 +627,54 @@ def test_audit_rejects_python_foldable_credential_literal(tmp_path: Path) -> Non
     assert _codes([settings]) == {"embedded-secret"}
 
 
+@pytest.mark.parametrize(
+    "wrapped_value",
+    [
+        'str("literal_abcdefghijklmnopqrstuvwxyz123456")',
+        'f"literal_abcdefghijklmnopqrstuvwxyz123456"',
+    ],
+)
+def test_audit_rejects_python_wrapped_credential_literals(
+    tmp_path: Path,
+    wrapped_value: str,
+) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    settings.write_text(f"{field_name} = {wrapped_value}\n", encoding="ascii")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    "wrapped_value",
+    [
+        '"  literal_abcdefghijklmnopqrstuvwxyz123456  ".strip()',
+        '"".join(("literal_", "abcdefghijklmnopqrstuvwxyz123456"))',
+    ],
+)
+def test_audit_rejects_method_folded_credential_literals(
+    tmp_path: Path,
+    wrapped_value: str,
+) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    settings.write_text(f"{field_name} = {wrapped_value}\n", encoding="ascii")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_keeps_vocabulary_token_wrapper_exemption(tmp_path: Path) -> None:
+    settings = tmp_path / "model_config.py"
+    settings.write_text(
+        'pad_token = str("$$")\n'
+        'eos_token = " [EOS] ".strip()\n'
+        'bos_token = "".join(("[", "BOS", "]"))\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([settings]) == []
+
+
 def test_audit_allows_empty_and_explicit_credential_placeholders(tmp_path: Path) -> None:
     first_name = "ACCESS" + "_TOKEN"
     second_name = "AUTH" + "_TOKEN"
@@ -499,6 +698,14 @@ def test_audit_allows_empty_and_explicit_credential_placeholders(tmp_path: Path)
     assert audit_paths([env_template, yaml_template]) == []
 
 
+def test_audit_allows_explicit_credential_sentinel_placeholder(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    settings.write_text(f'{field_name} = "API_KEY_SENTINEL"\n', encoding="ascii")
+
+    assert audit_paths([settings]) == []
+
+
 def test_audit_detects_han_characters_in_any_candidate_text(tmp_path: Path) -> None:
     text_file = tmp_path / "notes.custom"
     text_file.write_text("English then " + chr(0x6C49) + "\n", encoding="utf-8")
@@ -517,7 +724,7 @@ def test_audit_scans_text_even_when_its_path_is_forbidden(tmp_path: Path) -> Non
 def test_audit_rejects_custom_endpoint_configuration_and_relay_names(tmp_path: Path) -> None:
     endpoint_name = "OPENAI_BASE" + "_URL"
     argument_name = "base" + "_url"
-    relay_name = "open" + "router"
+    relay_name = "".join(("open", "router"))
     settings = tmp_path / "client.py"
     settings.write_text(
         f'{endpoint_name} = "https://relay.invalid/v1"\n'
@@ -527,6 +734,778 @@ def test_audit_rejects_custom_endpoint_configuration_and_relay_names(tmp_path: P
     )
 
     assert _codes([settings]) == {"custom-openai-endpoint", "relay-service"}
+
+
+def test_audit_rejects_every_non_ascii_text_byte(tmp_path: Path) -> None:
+    text_file = tmp_path / "notes.txt"
+    text_file.write_text("ASCII followed by " + chr(0x00E9) + "\n", encoding="utf-8")
+
+    assert _codes([text_file]) == {"non-ascii"}
+
+
+@pytest.mark.parametrize(
+    "private_path",
+    [
+        "/" + "userhome/account/project",
+        "/" + "home/account/project",
+        "/" + "Users/account/project",
+        "C:" + "\\Users\\account\\project",
+        "D:" + "/" + "Users/account/project",
+    ],
+)
+def test_audit_rejects_all_private_user_roots(tmp_path: Path, private_path: str) -> None:
+    settings = tmp_path / "settings.txt"
+    settings.write_text(f"model_path={private_path}\n", encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+
+def test_audit_rejects_tuple_assigned_credential_literals(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(
+        f'{field_name}, model_name = "{field_value}", "gpt-model"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "features/case.txt",
+        "feature/case.txt",
+        "reports/summary.txt",
+        "report/summary.txt",
+        "weights/model.txt",
+        "weight/model.txt",
+    ],
+)
+def test_audit_rejects_generated_feature_report_and_weight_trees(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    artifact = tmp_path / relative_path
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("generated\n", encoding="ascii")
+
+    assert _codes([artifact]) == {"forbidden-path"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'client = OpenAI(**{"base_" + "url": "https://relay.invalid/v1"})\n',
+        'setattr(openai, "api_" + "base", "https://relay.invalid/v1")\n',
+        'client = OpenAI("https://relay.invalid/v1")\n',
+    ],
+)
+def test_audit_ast_rejects_obfuscated_unofficial_openai_endpoints(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text(source, encoding="ascii")
+
+    assert _codes([settings]) == {"custom-openai-endpoint"}
+
+
+def test_audit_ast_rejects_folded_relay_names(tmp_path: Path) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text('provider = "open" + "router"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"relay-service"}
+
+
+def test_audit_allows_official_openai_api_without_endpoint_override(tmp_path: Path) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text(
+        'client = OpenAI()\nofficial_documentation = "https://api.openai.com/v1"\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([settings]) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import " + "mini" + "gpt4.models as external_model\n",
+        "from " + "mini" + "gpt4.models import MiniGPT4\n",
+    ],
+)
+def test_audit_ast_rejects_executable_minigpt4_imports(tmp_path: Path, source: str) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"external-runtime-import"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'import importlib as loader\nloader.import_module("external.model")\n',
+        '__import__("external.model")\n',
+        (
+            "from importlib import util as loader\n"
+            'loader.spec_from_file_location("external", source_file)\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_dynamic_external_runtime_imports(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"dynamic-import"}
+
+
+def test_audit_allows_static_importlib_metadata_use(tmp_path: Path) -> None:
+    module = tmp_path / "version.py"
+    module.write_text(
+        'from importlib.metadata import version\nPACKAGE_VERSION = version("package")\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "import sys as runtime\n"
+            "runtime." + "path[:0] = [str(external_source)]\n"
+        ),
+        (
+            "from sys import " + "path as search_path\n"
+            "search_path.append(str(external_source))\n"
+        ),
+        (
+            "import sys\n"
+            'getattr(sys, "pa" + "th").insert(0, str(external_source))\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_aliased_and_obfuscated_sys_path_mutations(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_rejects_locally_aliased_sys_path_mutation(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import sys\nsearch_path = sys.path\nsearch_path.insert(0, external_source)\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_uses_alias_value_at_mutation_site(tmp_path: Path) -> None:
+    rejected = tmp_path / "rejected.py"
+    rejected.write_text(
+        "import sys\n"
+        "search_path = sys.path\n"
+        "search_path.insert(0, external_source)\n"
+        "search_path = []\n",
+        encoding="ascii",
+    )
+    allowed = tmp_path / "allowed.py"
+    allowed.write_text(
+        "import sys\n"
+        "search_path = sys.path\n"
+        "search_path = []\n"
+        'search_path.insert(0, "local")\n',
+        encoding="ascii",
+    )
+
+    assert _codes([rejected]) == {"source-path-injection"}
+    assert audit_paths([allowed]) == []
+
+
+def test_audit_ast_keeps_aliases_in_their_function_scope(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import sys\n"
+        "def bind_only():\n"
+        "    search_path = sys.path\n"
+        "def mutate_local():\n"
+        "    search_path = []\n"
+        '    search_path.append("local")\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+def test_audit_ast_rejects_function_local_sys_path_alias_mutation(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "def inject():\n"
+        "    import sys\n"
+        "    search_path = sys.path\n"
+        "    search_path.append(external_source)\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize("variable", ["PYTHON" + "PATH", "BRAINVLM_" + "SOURCE", "BRAINVLM_SOURCE_" + "ROOT"])
+def test_audit_ast_rejects_removed_environment_injection(
+    tmp_path: Path,
+    variable: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        f'import os\nos.environ["{variable}"] = str(external_source)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_rejects_removed_environment_setdefault(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    python_path = "PYTHON" + "PATH"
+    module.write_text(
+        f'import os as operating_system\noperating_system.environ.setdefault("{python_path}", external_source)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize("method", ["run", "Popen", "call", "check_call", "check_output"])
+def test_audit_ast_rejects_removed_environment_in_subprocess_env(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    source_root = "BRAINVLM_SOURCE_" + "ROOT"
+    module.write_text(
+        "import subprocess as process\n"
+        f'process.{method}(["tool"], env={{"{source_root}": external_source}})\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_rejects_bound_subprocess_environment_mapping(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    python_path = "PYTHON" + "PATH"
+    module.write_text(
+        "import subprocess\n"
+        f'env = {{"{python_path}": external_source}}\n'
+        'subprocess.run(["tool"], env=env)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        'env[key] = external_source\n',
+        'env.update({key: external_source})\n',
+        'env.setdefault(key, external_source)\n',
+    ],
+)
+def test_audit_ast_rejects_incrementally_mutated_subprocess_environment(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import subprocess\n"
+        'key = "PY" + "THONPATH"\n'
+        "env = {}\n"
+        + mutation
+        + 'subprocess.run(["tool"], env=env)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_uses_environment_mapping_at_subprocess_call_site(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import subprocess\n"
+        'key = "PY" + "THONPATH"\n'
+        "env = {key: external_source}\n"
+        'env = {"PATH": local_path}\n'
+        'subprocess.run(["tool"], env=env)\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+def test_audit_ast_tracks_folded_environment_update_and_delete_order(tmp_path: Path) -> None:
+    rejected = tmp_path / "rejected.py"
+    rejected.write_text(
+        "import subprocess\n"
+        'key = "".join(("PYTHON", "PATH"))\n'
+        "env = dict()\n"
+        "env.update({key: external_source})\n"
+        'subprocess.run(["tool"], env=dict(env))\n',
+        encoding="ascii",
+    )
+    allowed = tmp_path / "allowed.py"
+    allowed.write_text(
+        "import subprocess\n"
+        'key = "".join(("PYTHON", "PATH"))\n'
+        "env = {key: external_source}\n"
+        "del env[key]\n"
+        'subprocess.run(["tool"], env=env)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([rejected]) == {"source-path-injection"}
+    assert audit_paths([allowed]) == []
+
+
+def test_audit_ast_rejects_folded_removed_environment_key(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import os\n"
+        'key = "BRAINVLM_" + "SOURCE"\n'
+        "os.environ[key] = external_source\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize(
+    ("variable", "expression"),
+    [
+        ("BRAINVLM_" + "SOURCE", 'operating_system.environ["{variable}"]'),
+        ("BRAINVLM_SOURCE_" + "ROOT", 'operating_system.environ.get("{variable}")'),
+        ("PYTHON" + "PATH", 'operating_system.getenv("{variable}")'),
+    ],
+)
+def test_audit_ast_rejects_removed_environment_reads(
+    tmp_path: Path,
+    variable: str,
+    expression: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import os as operating_system\nvalue = " + expression.format(variable=variable) + "\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_allows_harmless_environment_reads_and_subprocess_env(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import os\n"
+        "import subprocess\n"
+        'home = os.environ["HOME"]\n'
+        'path = os.getenv("PATH")\n'
+        'key = os.environ.get("OPENAI_API_KEY")\n'
+        'subprocess.run(["tool"], env={"PATH": path})\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+def test_audit_shell_scan_rejects_removed_environment_and_source_injection(
+    tmp_path: Path,
+) -> None:
+    launcher = tmp_path / "run.sh"
+    python_path = "PYTHON" + "PATH"
+    source_root = "BRAINVLM_SOURCE_" + "ROOT"
+    launcher.write_text(
+        f'export {python_path}="${{{source_root}}}:${{{python_path}}}"\n'
+        f'. "${{{source_root}}}/activate.sh"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface", "source-path-injection"}
+
+
+def test_audit_shell_scan_includes_bash_suffix(tmp_path: Path) -> None:
+    launcher = tmp_path / "run.bash"
+    python_path = "PYTHON" + "PATH"
+    launcher.write_text(
+        f'export {python_path}="/external"\nsource "${{ENV_ROOT}}/activate"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface", "source-path-injection"}
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        "--" + "source-root",
+        "--" + "brainvlm-source",
+        "--" + "adapter",
+        "--" + "model-factory",
+    ],
+)
+def test_audit_ast_rejects_removed_cli_options(tmp_path: Path, option: str) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(
+        f'import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument("{option}")\n',
+        encoding="ascii",
+    )
+
+    assert _codes([command]) == {"removed-source-interface"}
+
+
+def test_audit_ast_rejects_folded_removed_cli_option(tmp_path: Path) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        'option = "--source-" + "root"\n'
+        "parser.add_argument(option)\n",
+        encoding="ascii",
+    )
+
+    assert _codes([command]) == {"removed-source-interface"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "from subprocess import run as launch\n"
+            'launch([python, str(external_project / "tra" + "in.py")])\n'
+        ),
+        (
+            "import subprocess as process\n"
+            'process.Popen((python, "-m", "other_project." + "train"))\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_external_training_delegation(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(source, encoding="ascii")
+
+    assert _codes([command]) == {"external-training-delegation"}
+
+
+def test_audit_ast_rejects_bound_external_training_script(tmp_path: Path) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(
+        "import subprocess\n"
+        'training_script = external_project / "train.py"\n'
+        "subprocess.run([python, str(training_script)])\n",
+        encoding="ascii",
+    )
+
+    assert _codes([command]) == {"external-training-delegation"}
+
+
+def test_audit_ast_rejects_locally_aliased_dynamic_import(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "from importlib import import_module\n"
+        "load_external = import_module\n"
+        'load_external("external.model")\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"dynamic-import"}
+
+
+def test_audit_ast_rejects_dynamic_openai_endpoint_kwargs(tmp_path: Path) -> None:
+    module = tmp_path / "client.py"
+    module.write_text(
+        'endpoint_key = "base_" + "url"\n'
+        "client_kwargs = {}\n"
+        'client_kwargs[endpoint_key] = "https://relay.invalid/v1"\n'
+        "client = OpenAI(**client_kwargs)\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"custom-openai-endpoint"}
+
+
+def test_audit_ast_uses_openai_kwargs_at_constructor_call_site(tmp_path: Path) -> None:
+    module = tmp_path / "client.py"
+    module.write_text(
+        'endpoint_key = "base_" + "url"\n'
+        'client_kwargs = {endpoint_key: "https://relay.invalid/v1"}\n'
+        "client_kwargs = {}\n"
+        "client = OpenAI(**client_kwargs)\n",
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+def test_audit_ast_tracks_folded_dynamic_openai_kwargs_update(tmp_path: Path) -> None:
+    module = tmp_path / "client.py"
+    module.write_text(
+        'endpoint_key = "".join(("base_", "url"))\n'
+        "client_kwargs = dict()\n"
+        'client_kwargs.update({endpoint_key: "https://relay.invalid/v1"})\n'
+        "client = OpenAI(**dict(client_kwargs))\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"custom-openai-endpoint"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md",
+        "docs/superpowers/specs/2026-11-27-self-contained-brainvlm-midline-design.md",
+    ],
+)
+def test_audit_allows_removed_names_only_in_approved_prohibition_text(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    policy = tmp_path / relative_path
+    policy.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    source_option = "--" + "source-root"
+    policy.write_text(
+        f"The release must not set {python_path} or expose {source_option}.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([policy], root=tmp_path) == []
+
+    policy.write_text(
+        f"Set {python_path}=/external and pass {source_option} to the command.\n",
+        encoding="ascii",
+    )
+    assert _codes([policy]) == {"removed-source-interface"}
+
+
+def test_audit_does_not_allow_archive_suffix_spoof_of_approved_policy_path(
+    tmp_path: Path,
+) -> None:
+    approved_path = "docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md"
+    spoof = tmp_path / "archive" / approved_path
+    spoof.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    spoof.write_text(f"The release must not set {python_path}.\n", encoding="ascii")
+
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "removed-source-interface"
+    }
+
+
+def test_audit_prohibition_context_does_not_exempt_later_instruction(
+    tmp_path: Path,
+) -> None:
+    policy = (
+        tmp_path
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-11-27-self-contained-brainvlm-midline-design.md"
+    )
+    policy.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    source_option = "--" + "source-root"
+    policy.write_text(
+        f"The release must not expose {source_option}.\n"
+        f"  Set {python_path}=/external for the runtime.\n",
+        encoding="ascii",
+    )
+
+    assert {item.code for item in audit_paths([policy], root=tmp_path)} == {
+        "removed-source-interface"
+    }
+
+
+def test_audit_allows_legacy_source_paths_only_in_approved_provenance(
+    tmp_path: Path,
+) -> None:
+    provenance = tmp_path / "docs" / "provenance" / "brainvlm-midline-sources.md"
+    provenance.parent.mkdir(parents=True)
+    historical_path = "mini" + "gpt4/models/model.py"
+    provenance.write_text(f"Historical source: `{historical_path}`.\n", encoding="ascii")
+    assert audit_paths([provenance], root=tmp_path) == []
+
+    provenance.write_text(f"Import and execute `{historical_path}`.\n", encoding="ascii")
+    assert _codes([provenance]) == {"external-runtime-import"}
+
+    instructions = tmp_path / "docs" / "runtime.md"
+    instructions.write_text(f"Install and import `{historical_path}`.\n", encoding="ascii")
+    assert _codes([instructions]) == {"external-runtime-import"}
+
+    spoof = tmp_path / "archive" / "docs" / "provenance" / "brainvlm-midline-sources.md"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text(f"Historical source: `{historical_path}`.\n", encoding="ascii")
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "external-runtime-import"
+    }
+
+
+def test_audit_rejects_private_projects_path_without_placeholder_false_positives(
+    tmp_path: Path,
+) -> None:
+    private_path = "/" + "projects/private/model"
+    settings = tmp_path / "settings.py"
+    settings.write_text(f'MODEL_ROOT = "{private_path}"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+    documentation = tmp_path / "runtime.md"
+    documentation.write_text(
+        "#!/usr/bin/env bash\n"
+        "Use /path/to/model as a placeholder.\n"
+        "See https://example.invalid/projects/public/model.\n"
+        "See https://example.invalid/home/public/model.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([documentation]) == []
+
+
+def test_audit_rejects_private_mnt_path_without_url_false_positive(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    private_path = "/" + "mnt/private/model"
+    settings.write_text(f'MODEL_ROOT = "{private_path}"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+    documentation = tmp_path / "runtime.md"
+    documentation.write_text(
+        "#!/usr/bin/env bash\n"
+        "Use /path/to/model as a placeholder.\n"
+        "See https://example.invalid/mnt/public/model.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([documentation]) == []
+
+
+def test_audit_rejects_general_private_posix_absolute_path(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    private_path = "/" + "srv/private/model"
+    settings.write_text(f'MODEL_ROOT = "{private_path}"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+
+def test_audit_allows_explicit_safe_absolute_path_contexts(tmp_path: Path) -> None:
+    documentation = tmp_path / "runtime.md"
+    documentation.write_text(
+        "#!/usr/bin/env bash\n"
+        "Use /path/to/model as a placeholder.\n"
+        "Temporary files may use /tmp/midline-agent.\n"
+        "See https://example.invalid/srv/private/model.\n"
+        "See s3://synthetic-bucket/private/model.\n",
+        encoding="ascii",
+    )
+
+    assert audit_paths([documentation]) == []
+
+
+def test_audit_allows_relative_parent_path_without_treating_it_as_absolute(
+    tmp_path: Path,
+) -> None:
+    documentation = tmp_path / "build.md"
+    documentation.write_text("Build archives in ../dist/package.whl.\n", encoding="ascii")
+
+    assert audit_paths([documentation]) == []
+
+
+def test_audit_allows_exact_synthetic_test_fixture_roots(tmp_path: Path) -> None:
+    fixture = tmp_path / "tests" / "test_schema.py"
+    fixture.parent.mkdir()
+    fixture.write_text(
+        'path = "/synthetic-storage/case/scan.nii.gz"\n',
+        encoding="ascii",
+    )
+    assert audit_paths([fixture], root=tmp_path) == []
+
+    spoof = tmp_path / "archive" / "tests" / "test_schema.py"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text(
+        'path = "/synthetic-storage/case/scan.nii.gz"\n',
+        encoding="ascii",
+    )
+    assert _codes([spoof]) == {"private-path"}
+
+
+def test_audit_scans_extensionless_shell_script_from_shebang(tmp_path: Path) -> None:
+    launcher = tmp_path / "launch"
+    python_path = "PYTHON" + "PATH"
+    launcher.write_text(
+        "#!/usr/bin/env bash\n"
+        f'export {python_path}="/external"\n'
+        'source "${ENV_ROOT}/activate"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface", "source-path-injection"}
+
+
+def test_audit_scans_bin_sh_extensionless_script(tmp_path: Path) -> None:
+    launcher = tmp_path / "launch-sh"
+    python_path = "PYTHON" + "PATH"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        f'export {python_path}="/external"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface"}
+
+
+def test_audit_policy_fixture_exemption_is_exact_root_relative(tmp_path: Path) -> None:
+    fixture = tmp_path / "tests" / "test_release_audit.py"
+    fixture.parent.mkdir()
+    fixture.write_text("# baseline policy fixture\n", encoding="ascii")
+    assert audit_paths([fixture], root=tmp_path) == []
+
+    spoof = tmp_path / "archive" / "tests" / "test_release_audit.py"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text("# baseline user guidance\n", encoding="ascii")
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "prohibited-term"
+    }
+
+
+def test_audit_ast_fixture_exemption_is_exact_root_relative(tmp_path: Path) -> None:
+    fixture = tmp_path / "tests" / "test_release_audit.py"
+    fixture.parent.mkdir()
+    fixture.write_text(
+        'relay_name = "".join(("open", "router"))\n',
+        encoding="ascii",
+    )
+    assert audit_paths([fixture], root=tmp_path) == []
+
+    spoof = tmp_path / "archive" / "tests" / "test_release_audit.py"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text(
+        'relay_name = "".join(("open", "router"))\n',
+        encoding="ascii",
+    )
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "relay-service"
+    }
 
 
 def test_audit_rejects_prohibited_term_outside_policy_files(tmp_path: Path) -> None:

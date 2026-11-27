@@ -12,31 +12,59 @@ requires-python = ">=3.9"
 dependencies = []
 
 [project.optional-dependencies]
-diagnostic = ["numpy>=1.24", "pillow>=10", "safetensors>=0.4", "torch>=2.1"]
-survival = ["numpy>=1.24", "torch>=2.1", "scikit-learn", "scikit-survival", "pandas", "lifelines"]
+diagnostic = [
+  "einops>=0.8,<0.9",
+  "numpy>=1.24,<2",
+  "omegaconf>=2.3,<2.4",
+  "open-clip-torch>=2.24,<2.25",
+  "peft>=0.2,<0.3",
+  "Pillow>=10,<12",
+  "PyYAML>=6,<7",
+  "safetensors>=0.4,<1",
+  "torch>=2.1,<2.2",
+  "torchvision>=0.16,<0.17",
+  "transformers>=4.46,<4.47",
+]
+survival = ["numpy>=1.24,<2", "torch>=2.1,<2.2", "scikit-learn", "scikit-survival", "pandas", "lifelines"]
 treatment = ["openai>=1.54"]
 all = [
+  "einops>=0.8,<0.9",
   "lifelines",
-  "numpy>=1.24",
+  "numpy>=1.24,<2",
+  "omegaconf>=2.3,<2.4",
+  "open-clip-torch>=2.24,<2.25",
   "openai>=1.54",
   "pandas",
-  "pillow>=10",
-  "safetensors>=0.4",
+  "peft>=0.2,<0.3",
+  "Pillow>=10,<12",
+  "PyYAML>=6,<7",
+  "safetensors>=0.4,<1",
   "scikit-learn",
   "scikit-survival",
-  "torch>=2.1",
+  "torch>=2.1,<2.2",
+  "torchvision>=0.16,<0.17",
+  "transformers>=4.46,<4.47",
 ]
 dev = ["pytest>=7.4"]
 
 [project.scripts]
 midline-extract-features = "scripts.extract_features:main"
 midline-train-attention-mil = "scripts.train_attention_mil:main"
+midline-train-brainvlm = "scripts.train_brainvlm_midline:main"
 midline-predict-tumor = "scripts.predict_tumor:main"
 midline-predict-who-grade = "scripts.predict_who_grade:main"
 midline-run = "scripts.run_pipeline:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools]
+license-files = [
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+  "licenses/*.txt",
+  "docs/provenance/*.md",
+]
 
 [tool.setuptools.packages.find]
 include = ["midline_agent*", "scripts*"]

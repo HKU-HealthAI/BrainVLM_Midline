@@ -25,18 +25,42 @@ def test_pipeline_runner_exposes_no_custom_openai_endpoint() -> None:
     assert endpoint_argument_name not in source
     assert "user-supplied LLM endpoint" not in source
     assert "--mock-diagnostic" not in source
+    assert "sys.path" not in source
+
+
+def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "scripts/run_pipeline.py").read_text(encoding="utf-8")
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.run_pipeline", "--help"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "--internal-case-db" not in completed.stdout
+    assert "--private-evidence-root" not in completed.stdout
+    assert "--treatment-provider" not in completed.stdout
+    for discovery_token in (
+        "INTERNAL_CASE_DB",
+        "PRIVATE_EVIDENCE",
+        "TREATMENT_PROVIDER",
+        "/secure/midlineagent",
+    ):
+        assert discovery_token not in source
 
 
 def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
     root = Path(__file__).resolve().parents[1]
     extraction = subprocess.run(
-        [sys.executable, "scripts/extract_features.py", "--help"],
+        [sys.executable, "-m", "scripts.extract_features", "--help"],
         cwd=root,
         capture_output=True,
         text=True,
     )
     training = subprocess.run(
-        [sys.executable, "scripts/train_attention_mil.py", "--help"],
+        [sys.executable, "-m", "scripts.train_attention_mil", "--help"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -53,21 +77,21 @@ def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
 def test_standalone_diagnostic_cli_help_exposes_all_required_paths() -> None:
     root = Path(__file__).resolve().parents[1]
     commands = {
-        "scripts/predict_tumor.py": (
+        "scripts.predict_tumor": (
             "--annotations",
             "--image-root",
-            "--brainvlm-source",
             "--llama-model",
+            "--biomedclip-pretrained",
             "--checkpoint",
             "--mil-checkpoint",
             "--output",
             "--device",
         ),
-        "scripts/predict_who_grade.py": (
+        "scripts.predict_who_grade": (
             "--annotations",
             "--image-root",
-            "--brainvlm-source",
             "--llama-model",
+            "--biomedclip-pretrained",
             "--checkpoint",
             "--tumor-result",
             "--tumor-type",
@@ -75,15 +99,29 @@ def test_standalone_diagnostic_cli_help_exposes_all_required_paths() -> None:
             "--device",
         ),
     }
-    for script, expected in commands.items():
+    for module, expected in commands.items():
         completed = subprocess.run(
-            [sys.executable, script, "--help"],
+            [sys.executable, "-m", module, "--help"],
             cwd=root,
             capture_output=True,
             text=True,
         )
         assert completed.returncode == 0, completed.stderr
         assert all(flag in completed.stdout for flag in expected)
+        for removed in ("--brainvlm-source", "--source-root", "--model-factory"):
+            assert removed not in completed.stdout
+
+
+def test_standalone_commands_do_not_inject_source_paths() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    for name in ("predict_tumor.py", "predict_who_grade.py"):
+        source = (root / "scripts" / name).read_text(encoding="ascii")
+        assert "sys.path" not in source
+        assert "PYTHONPATH" not in source
+        assert "brainvlm-source" not in source
+        assert "source-root" not in source
+        assert "model-factory" not in source
 
 
 class _FakeResult:
@@ -100,15 +138,32 @@ def test_tumor_cli_wires_runtime_service_and_writes_json_atomically(
 ) -> None:
     import scripts.predict_tumor as command
 
-    paths = {name: tmp_path / name for name in ("annotations", "images", "source", "llama", "model", "mil")}
+    paths = {
+        name: tmp_path / name
+        for name in ("annotations", "images", "llama", "biomedclip", "model", "mil")
+    }
     output = tmp_path / "nested" / "tumor.json"
     case = object()
     runtime = object()
     predictor = object()
     observed: dict[str, object] = {}
     monkeypatch.setattr(command, "load_inference_case", lambda annotations, image_root: case)
-    monkeypatch.setattr(command.BrainVlmRuntime, "load", lambda *args, **kwargs: runtime)
-    monkeypatch.setattr(command, "LogitsMilPredictor", lambda path: predictor)
+
+    def load_runtime(llama_model, checkpoint, *, device, biomedclip_pretrained):
+        observed["runtime_call"] = (
+            llama_model,
+            checkpoint,
+            device,
+            biomedclip_pretrained,
+        )
+        return runtime
+
+    def load_mil(path):
+        observed["mil_call"] = path
+        return predictor
+
+    monkeypatch.setattr(command.BrainVlmRuntime, "load", load_runtime)
+    monkeypatch.setattr(command, "LogitsMilPredictor", load_mil)
 
     class FakeService:
         def __init__(self, **kwargs) -> None:
@@ -128,10 +183,10 @@ def test_tumor_cli_wires_runtime_service_and_writes_json_atomically(
             str(paths["annotations"]),
             "--image-root",
             str(paths["images"]),
-            "--brainvlm-source",
-            str(paths["source"]),
             "--llama-model",
             str(paths["llama"]),
+            "--biomedclip-pretrained",
+            str(paths["biomedclip"]),
             "--checkpoint",
             str(paths["model"]),
             "--mil-checkpoint",
@@ -139,7 +194,7 @@ def test_tumor_cli_wires_runtime_service_and_writes_json_atomically(
             "--output",
             str(output),
             "--device",
-            "cuda:0",
+            "cuda:3",
         ],
     )
 
@@ -147,6 +202,15 @@ def test_tumor_cli_wires_runtime_service_and_writes_json_atomically(
     assert json.loads(output.read_text(encoding="utf-8"))["tumor_type"] == "tumor_4"
     assert observed["runtime"] is runtime
     assert observed["mil_predictor"] is predictor
+    assert observed["model_checkpoint"] == paths["model"]
+    assert observed["mil_checkpoint"] == paths["mil"]
+    assert observed["runtime_call"] == (
+        paths["llama"],
+        paths["model"],
+        "cuda:3",
+        str(paths["biomedclip"]),
+    )
+    assert observed["mil_call"] == paths["mil"]
     assert not list(output.parent.glob("*.tmp"))
 
 
@@ -154,6 +218,7 @@ def test_who_cli_requires_one_tumor_source_and_uses_result_patient_id(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import scripts.predict_tumor as tumor_command
     import scripts.predict_who_grade as command
 
     tumor_result = tmp_path / "tumor.json"
@@ -163,8 +228,20 @@ def test_who_cli_requires_one_tumor_source_and_uses_result_patient_id(
     )
     output = tmp_path / "who.json"
     case = type("Case", (), {"patient_id": "patient-a"})()
+    runtime = object()
     observed: dict[str, object] = {}
     monkeypatch.setattr(command, "load_inference_case", lambda annotations, image_root: case)
+
+    def load_runtime(llama_model, checkpoint, *, device, biomedclip_pretrained):
+        observed["runtime_call"] = (
+            llama_model,
+            checkpoint,
+            device,
+            biomedclip_pretrained,
+        )
+        return runtime
+
+    monkeypatch.setattr(tumor_command.BrainVlmRuntime, "load", load_runtime)
 
     class FakeService:
         def __init__(self, runtime_factory, model_checkpoint) -> None:
@@ -174,29 +251,39 @@ def test_who_cli_requires_one_tumor_source_and_uses_result_patient_id(
         def predict(self, value, tumor_type):
             assert value is case
             observed["tumor_type"] = tumor_type
+            observed["runtime"] = observed["factory"]()
             return _FakeResult({"patient_id": "patient-a", "who_grade": "grade_3"})
 
     monkeypatch.setattr(command, "WhoGradePredictionService", FakeService)
+    assert command._load_brainvlm_runtime is tumor_command._load_brainvlm_runtime
     required = [
         "--annotations",
         str(tmp_path / "annotations.json"),
         "--image-root",
         str(tmp_path / "images"),
-        "--brainvlm-source",
-        str(tmp_path / "source"),
         "--llama-model",
         str(tmp_path / "llama"),
+        "--biomedclip-pretrained",
+        str(tmp_path / "biomedclip.bin"),
         "--checkpoint",
         str(tmp_path / "who.pth"),
         "--output",
         str(output),
         "--device",
-        "cuda:0",
+        "cuda:2",
     ]
     monkeypatch.setattr(sys, "argv", ["predict_who_grade.py", *required, "--tumor-result", str(tumor_result)])
 
     assert command.main() == 0
     assert observed["tumor_type"] == "tumor_4"
+    assert observed["runtime"] is runtime
+    assert observed["checkpoint"] == tmp_path / "who.pth"
+    assert observed["runtime_call"] == (
+        tmp_path / "llama",
+        tmp_path / "who.pth",
+        "cuda:2",
+        str(tmp_path / "biomedclip.bin"),
+    )
     assert json.loads(output.read_text(encoding="utf-8"))["who_grade"] == "grade_3"
 
     monkeypatch.setattr(sys, "argv", ["predict_who_grade.py", *required])
@@ -233,8 +320,6 @@ def test_who_cli_rejects_tumor_result_for_another_patient(
             str(tmp_path / "annotations.json"),
             "--image-root",
             str(tmp_path / "images"),
-            "--brainvlm-source",
-            str(tmp_path / "source"),
             "--llama-model",
             str(tmp_path / "llama"),
             "--checkpoint",
@@ -252,6 +337,52 @@ def test_who_cli_rejects_tumor_result_for_another_patient(
         command.main()
 
 
+@pytest.mark.parametrize("tumor_type", ["tumor_1", "tumor_3"])
+def test_who_cli_fixed_grade_skips_runtime_construction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tumor_type: str,
+) -> None:
+    import scripts.predict_tumor as tumor_command
+    import scripts.predict_who_grade as command
+
+    output = tmp_path / "who.json"
+    case = type("Case", (), {"patient_id": "patient-a"})()
+    monkeypatch.setattr(command, "load_inference_case", lambda annotations, image_root: case)
+
+    def fail_runtime(*args, **kwargs):
+        raise AssertionError("fixed-grade WHO prediction must not construct the runtime")
+
+    monkeypatch.setattr(tumor_command.BrainVlmRuntime, "load", fail_runtime)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "predict_who_grade.py",
+            "--annotations",
+            str(tmp_path / "annotations.json"),
+            "--image-root",
+            str(tmp_path / "images"),
+            "--llama-model",
+            str(tmp_path / "llama"),
+            "--checkpoint",
+            str(tmp_path / "who.pth"),
+            "--tumor-type",
+            tumor_type,
+            "--output",
+            str(output),
+            "--device",
+            "cuda:7",
+        ],
+    )
+
+    assert command.main() == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["who_grade"] == "grade_4"
+    assert payload["method"] == "fixed_rule"
+    assert payload["checkpoint_sha256"] is None
+
+
 def test_standalone_commands_do_not_read_openai_configuration() -> None:
     root = Path(__file__).resolve().parents[1]
     for name in ("predict_tumor.py", "predict_who_grade.py"):
@@ -264,27 +395,57 @@ def test_readme_documents_reproducible_checkpoint_inference() -> None:
     readme = (root / "README.md").read_text(encoding="ascii")
 
     required = (
-        "https://github.com/HKU-HealthAI/BrainVLM",
-        "168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD",
-        "1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL",
-        "15fch44MAuqOE4g4vuPegwAaFZn2EDk-M",
+        "https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link",
+        "https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link",
+        "https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link",
         "Llama 3.1-8B Instruct",
         "BiomedCLIP",
         "test_data/utsw_glioma_bt0156/annotations.json",
+        "midline-predict-tumor",
+        "midline-predict-who-grade",
+        "midline-extract-features",
+        "midline-train-brainvlm",
+        "midline-run",
         "scripts/run_tumor_prediction.sh",
         "scripts/run_who_grading.sh",
         "scripts/run_tumor_prediction.sbatch",
         "scripts/run_who_grading.sbatch",
-        "tumor_4",
-        "grade_3",
-        "No generated prediction is bundled",
+        "modified training and inference source",
+        "does not call another source checkout",
+        "No diagnostic labels or results are bundled",
         "https://doi.org/10.7937/DFAE-1B86",
     )
 
     assert all(item in readme for item in required)
     assert "Python 3.9 or newer" in readme
+    assert "git clone" not in readme
+    assert "The reference labels for BT0156" not in readme
     assert "The public CLI does not expose a separate WHO-checkpoint argument" not in readme
     assert "no patient data or example cases are bundled" not in readme
+
+
+def test_public_docs_define_private_treatment_evidence_boundary() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="ascii")
+    provider_docs = (root / "docs/treatment-providers.md").read_text(encoding="ascii")
+
+    for document in (readme, provider_docs):
+        assert "not distributed" in document
+        assert "outside the Git checkout" in document
+        assert "EvidenceProvider" in document
+        assert "treatment_providers" in document
+        assert "does not automatically" in document
+    assert "CaseState.to_trace()" in provider_docs
+    assert "trusted in-process" in provider_docs
+    assert "does not sandbox" in provider_docs
+    assert "non-identifying opaque source IDs" in provider_docs
+    normalized_readme = " ".join(readme.split())
+    normalized_provider_docs = " ".join(provider_docs.split())
+    assert "cannot reproduce private-database retrieval or the report quality" in normalized_readme
+    assert "Provider-issued source IDs are sent verbatim" in normalized_provider_docs
+    assert "does not reproduce the full private evidence-grounding behavior" in normalized_provider_docs
+    assert "does not sandbox a provider or terminate its daemon thread" in normalized_provider_docs
+    assert "Before persistence, call `CaseState.to_trace()`" in normalized_provider_docs
 
 
 def test_data_schema_separates_label_free_inference_from_training_labels() -> None:
@@ -364,7 +525,7 @@ def test_pipeline_persists_minimized_trace_for_failed_downstream_step(
     assert exit_code == 1
 
 
-def test_pipeline_writes_failed_trace_when_openai_configuration_is_missing(
+def test_pipeline_marks_unconfigured_steps_unavailable_when_openai_configuration_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
     import scripts.run_pipeline as run_pipeline
@@ -380,6 +541,10 @@ def test_pipeline_writes_failed_trace_when_openai_configuration_is_missing(
         ["run_pipeline.py", "--case-json", str(case_path), "--output", str(output_path)],
     )
 
-    assert run_pipeline.main() == 1
+    assert run_pipeline.main() == 0
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["steps"][2]["status"]["state"] == "failed"
+    assert [step["status"]["state"] for step in payload["steps"]] == [
+        "unavailable",
+        "unavailable",
+        "unavailable",
+    ]

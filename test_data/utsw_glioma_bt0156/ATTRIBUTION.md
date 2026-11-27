@@ -11,8 +11,8 @@ Reddy, D., Saadat, N., Holcomb, J., Wagner, B., Truong, N., Bowerman, J.,
 Hatanpaa, K., Patel, T., Pinho, M., Yu, F., Zhang, K., Lodhi, S.,
 Madhuranthakam, A., Bangalore Yogananda, C. G., & Maldjian, J. (2026). The
 University of Texas Southwestern Glioma MRI dataset with molecular marker
-characterization and segmentations (UTSW-Glioma) (Version 1) [Data set]. The
-Cancer Imaging Archive. https://doi.org/10.7937/DFAE-1B86
+characterization and segmentations (UTSW-Glioma) (Version 1) [Data set].
+The Cancer Imaging Archive. https://doi.org/10.7937/DFAE-1B86
 
 Collection page:
 https://www.cancerimagingarchive.net/collection/utsw-glioma/

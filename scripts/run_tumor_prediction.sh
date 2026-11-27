@@ -3,7 +3,6 @@ set -euo pipefail
 
 : "${ANNOTATIONS:?Set ANNOTATIONS to the label-free patient JSON file}"
 : "${IMAGE_ROOT:?Set IMAGE_ROOT to the directory containing the referenced images}"
-: "${BRAINVLM_SOURCE:?Set BRAINVLM_SOURCE to a BrainVLM checkout}"
 : "${LLAMA_MODEL:?Set LLAMA_MODEL to the Llama 3.1-8B Instruct directory}"
 : "${TUMOR_CHECKPOINT:?Set TUMOR_CHECKPOINT to the BrainVLM-Midline checkpoint}"
 : "${MIL_CHECKPOINT:?Set MIL_CHECKPOINT to the learnable-logits MIL checkpoint}"
@@ -17,7 +16,6 @@ repository_root="$(cd -- "$script_dir/.." && pwd)"
 arguments=(
   --annotations "$ANNOTATIONS"
   --image-root "$IMAGE_ROOT"
-  --brainvlm-source "$BRAINVLM_SOURCE"
   --llama-model "$LLAMA_MODEL"
   --checkpoint "$TUMOR_CHECKPOINT"
   --mil-checkpoint "$MIL_CHECKPOINT"

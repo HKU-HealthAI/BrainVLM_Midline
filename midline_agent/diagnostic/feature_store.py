@@ -9,13 +9,38 @@ from typing import Any, Mapping
 import torch
 from safetensors import SafetensorError
 
-from .artifact_io import ArtifactBindingError, load_bound_safetensors, write_bound_safetensors
+from midline_agent.datasets.annotations import MODALITIES
+from midline_agent.datasets.brainvlm import PREPROCESSING_VERSION
+from midline_agent.datasets.prompts import PROMPT_VERSION
+
+from .artifact_io import (
+    SHA256_PATTERN,
+    ArtifactBindingError,
+    load_bound_safetensors,
+    write_bound_safetensors,
+)
 
 
 FEATURE_STORE_FORMAT = "midline-agent-feature-store"
 FEATURE_STORE_FORMAT_VERSION = "1.0"
 FEATURE_KINDS = frozenset({"logits", "hidden", "hidden_and_logits"})
 TUMOR_CLASS_COUNT = 5
+EXTRACTION_METADATA_KEYS = frozenset(
+    {
+        "schema_version",
+        "feature_kind",
+        "logit_dimension",
+        "hidden_dimension",
+        "modality_map",
+        "checkpoint_sha256",
+        "prompt_version",
+        "preprocessing_version",
+    }
+)
+EXTRACTION_PATIENT_KEYS = frozenset(
+    {"label", "slice_ids", "modalities", "logits", "hidden", "valid_mask", "slice_metadata"}
+)
+EXTRACTION_MODALITY_MAP = {name: index for index, name in enumerate(MODALITIES)}
 FEATURE_SIDECAR_KEYS = frozenset(
     {"format", "format_version", "artifact_id", "tensor_sha256", "metadata", "patients"}
 )
@@ -37,11 +62,15 @@ def _validate_metadata(metadata: Any) -> tuple[set[int], tuple[str, ...]]:
     missing = required - metadata.keys()
     if missing:
         raise FeatureSchemaError(f"metadata missing: {', '.join(sorted(missing))}")
-    if str(metadata["schema_version"]).split(".", 1)[0] != "1":
-        raise FeatureSchemaError("unsupported feature schema major version")
     kind = metadata["feature_kind"]
     if kind not in FEATURE_KINDS:
         raise FeatureSchemaError("unsupported feature_kind")
+    is_extraction = kind == "hidden_and_logits"
+    if is_extraction:
+        if metadata["schema_version"] != "1.0":
+            raise FeatureSchemaError("unsupported extraction feature schema version")
+    elif str(metadata["schema_version"]).split(".", 1)[0] != "1":
+        raise FeatureSchemaError("unsupported feature schema major version")
     for key in ("logit_dimension", "hidden_dimension"):
         value = metadata[key]
         if type(value) is not int or value < 0:
@@ -62,6 +91,28 @@ def _validate_metadata(metadata: Any) -> tuple[set[int], tuple[str, ...]]:
         raise FeatureSchemaError("modality_map values must be non-negative integers")
     if set(modality_values) != set(range(len(modality_values))):
         raise FeatureSchemaError("modality_map values must be unique and contiguous")
+    if is_extraction:
+        missing = EXTRACTION_METADATA_KEYS - metadata.keys()
+        if missing:
+            raise FeatureSchemaError(f"extraction metadata missing: {', '.join(sorted(missing))}")
+        unexpected = metadata.keys() - EXTRACTION_METADATA_KEYS
+        if unexpected:
+            raise FeatureSchemaError(
+                f"extraction metadata contains unexpected fields: {', '.join(sorted(unexpected))}"
+            )
+        if metadata["logit_dimension"] != 5:
+            raise FeatureSchemaError("extraction logit_dimension must be 5")
+        if metadata["hidden_dimension"] != 4096:
+            raise FeatureSchemaError("extraction hidden_dimension must be 4096")
+        if dict(modality_map) != EXTRACTION_MODALITY_MAP:
+            raise FeatureSchemaError("extraction modality_map must use the canonical four modalities")
+        checkpoint_sha256 = metadata["checkpoint_sha256"]
+        if not isinstance(checkpoint_sha256, str) or SHA256_PATTERN.fullmatch(checkpoint_sha256) is None:
+            raise FeatureSchemaError("extraction checkpoint_sha256 must be a SHA-256 digest")
+        if metadata["prompt_version"] != PROMPT_VERSION:
+            raise FeatureSchemaError("extraction prompt_version is unsupported")
+        if metadata["preprocessing_version"] != PREPROCESSING_VERSION:
+            raise FeatureSchemaError("extraction preprocessing_version is unsupported")
     tensor_names = tuple(name for name in ("logits", "hidden") if name in kind)
     return set(modality_values), tensor_names
 
@@ -75,6 +126,61 @@ def _validate_tensor(patient_id: str, name: str, tensor: Any, rows: int, dimensi
         raise FeatureSchemaError(f"patient {patient_id} {name} must use float32")
     if not bool(torch.isfinite(tensor).all()):
         raise FeatureSchemaError(f"patient {patient_id} {name} must contain only finite values")
+
+
+def _validate_extraction_slices(patient_id: str, patient: Mapping[str, Any]) -> None:
+    unexpected = patient.keys() - EXTRACTION_PATIENT_KEYS
+    if unexpected:
+        raise FeatureSchemaError(
+            f"patient {patient_id} contains unexpected extraction fields: {', '.join(sorted(unexpected))}"
+        )
+    inverse_modalities = {value: name for name, value in EXTRACTION_MODALITY_MAP.items()}
+    identities: list[tuple[int, int]] = []
+    for row, (slice_id, modality_index, slice_metadata) in enumerate(
+        zip(patient["slice_ids"], patient["modalities"], patient["slice_metadata"])
+    ):
+        if not isinstance(slice_metadata, Mapping):
+            raise FeatureSchemaError(f"patient {patient_id} slice_metadata row {row} must be a mapping")
+        missing = {"modality", "slice_index", "checksum"} - slice_metadata.keys()
+        if missing:
+            raise FeatureSchemaError(
+                f"patient {patient_id} slice_metadata row {row} missing: {', '.join(sorted(missing))}"
+            )
+        unexpected_metadata = slice_metadata.keys() - {
+            "modality",
+            "slice_index",
+            "checksum",
+            "keyframe_label",
+        }
+        if unexpected_metadata:
+            raise FeatureSchemaError(
+                f"patient {patient_id} slice_metadata row {row} contains unexpected fields: "
+                f"{', '.join(sorted(unexpected_metadata))}"
+            )
+        modality = slice_metadata["modality"]
+        slice_index = slice_metadata["slice_index"]
+        checksum = slice_metadata["checksum"]
+        if modality not in EXTRACTION_MODALITY_MAP:
+            raise FeatureSchemaError(f"patient {patient_id} slice_metadata row {row} has unsupported modality")
+        if type(slice_index) is not int or slice_index < 0:
+            raise FeatureSchemaError(f"patient {patient_id} slice_index must be a non-negative integer")
+        if not isinstance(checksum, str) or SHA256_PATTERN.fullmatch(checksum) is None:
+            raise FeatureSchemaError(f"patient {patient_id} slice checksum must be a SHA-256 digest")
+        keyframe_label = slice_metadata.get("keyframe_label")
+        if keyframe_label is not None and (type(keyframe_label) is not int or keyframe_label not in (0, 1)):
+            raise FeatureSchemaError(f"patient {patient_id} keyframe_label must be integer 0 or 1")
+        if (
+            modality_index != EXTRACTION_MODALITY_MAP[modality]
+            or inverse_modalities.get(modality_index) != modality
+        ):
+            raise FeatureSchemaError(f"patient {patient_id} has inconsistent ordered slice identity")
+        if slice_id != f"{patient_id}:{modality}:{slice_index}":
+            raise FeatureSchemaError(f"patient {patient_id} has invalid ordered slice identity")
+        identities.append((modality_index, slice_index))
+    if identities != sorted(identities) or len(set(identities)) != len(identities):
+        raise FeatureSchemaError(f"patient {patient_id} must use unique ordered slice identity")
+    if not all(patient["valid_mask"]):
+        raise FeatureSchemaError(f"patient {patient_id} extraction valid_mask must contain only true values")
 
 
 def validate_feature_store(store: Any) -> None:
@@ -117,13 +223,15 @@ def validate_feature_store(store: Any) -> None:
             raise FeatureSchemaError(f"patient {patient_id} must contain at least one valid slice")
         if any(type(value) is not int or value not in modality_values | {-1} for value in modalities):
             raise FeatureSchemaError(f"patient {patient_id} contains an unsupported modality")
-        if any(valid and modality not in modality_values for valid, modality in zip(valid_mask, modalities, strict=True)):
+        if any(valid and modality not in modality_values for valid, modality in zip(valid_mask, modalities)):
             raise FeatureSchemaError(f"patient {patient_id} contains an invalid active modality")
         if len(set(slice_ids)) != rows or any(not isinstance(value, str) or not value for value in slice_ids):
             raise FeatureSchemaError(f"patient {patient_id} slice_ids must be unique non-empty strings")
         for name in tensor_names:
             dimension = metadata["logit_dimension" if name == "logits" else "hidden_dimension"]
             _validate_tensor(patient_id, name, patient[name], rows, dimension)
+        if metadata["feature_kind"] == "hidden_and_logits":
+            _validate_extraction_slices(patient_id, patient)
 
 
 def _sidecar_path(path: Path) -> Path:
