@@ -335,25 +335,25 @@ git commit -m "feat: add focused BrainVLM-Midline datasets"
 - Delete: `configs/brainvlm_training.example.yaml`
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Write failing component training tests**
+- [x] **Step 1: Write failing component training tests**
 
 Inject a tiny compatible model and dataset. Test parameter freezing, AdamW decay/no-decay grouping, linear warmup plus cosine decay, gradient accumulation, AMP scaler plumbing, seeded epochs, one optimizer step, trainable-only model state, checkpoint envelope fields, resume at the next epoch, and strict inference loading of the saved model envelope. Parameterize every approved configuration field with valid, missing, wrong-type, out-of-range, and unknown-field cases. Require the CLI `--task` value and configuration task to agree.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_training.py`
 
 Expected: FAIL because focused training is missing.
 
-- [ ] **Step 3: Implement the training core**
+- [x] **Step 3: Implement the training core**
 
 Train only LoRA adapters, `visual_encoder.norm`, `llama_proj_mlps`, `v_q_project`, and `cross_attention`. Support single-GPU and single-node `torchrun` DDP, AMP, accumulation, deterministic sampling, and rank-zero checkpoint writing. Reject inference-only checkpoints passed to `--resume`.
 
-- [ ] **Step 4: Implement the CLI and templates**
+- [x] **Step 4: Implement the CLI and templates**
 
 Add `midline-train-brainvlm = "scripts.train_brainvlm_midline:main"`. Accept `--task tumor|who --config PATH`. Parse only approved configuration fields, require caller-owned data/output paths, and reject unknown fields. Templates must contain placeholders and no server paths.
 
-- [ ] **Step 5: Run a real two-process CPU DDP smoke test**
+- [x] **Step 5: Run a real two-process CPU DDP smoke test**
 
 Implement `tests/diagnostic/ddp_smoke.py` as a small executable using injected foundation stubs, a two-record dataset, the `gloo` backend, and the public training entry point. Each rank writes an atomic rank marker to a temporary directory; only rank zero may write the checkpoint. Run:
 
@@ -363,13 +363,13 @@ torchrun --standalone --nnodes=1 --nproc-per-node=2 tests/diagnostic/ddp_smoke.p
 
 Expected: exit code 0, two rank markers, one checkpoint, one optimizer step per rank, identical reduced loss, and no non-zero-rank checkpoint.
 
-- [ ] **Step 6: Run component and CLI tests**
+- [x] **Step 6: Run component and CLI tests**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_training.py tests/test_cli_entrypoints.py`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit focused training**
+- [x] **Step 7: Commit focused training**
 
 ```bash
 git add -A midline_agent/diagnostic/brainvlm_midline/training.py scripts/train_brainvlm_midline.py scripts/train_brainvlm.sh configs pyproject.toml tests/diagnostic/test_brainvlm_training.py tests/diagnostic/ddp_smoke.py tests/test_cli_entrypoints.py

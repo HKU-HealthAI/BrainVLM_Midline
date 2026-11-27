@@ -4,7 +4,8 @@ LICENSE
 README.md
 THIRD_PARTY_NOTICES.md
 configs/attention_mil.example.yaml
-configs/brainvlm_training.example.yaml
+configs/brainvlm_tumor.example.yaml
+configs/brainvlm_who.example.yaml
 docs/data-schema.md
 docs/external-brainvlm-adapter.md
 docs/provenance/brainvlm-midline-sources.md
@@ -39,6 +40,7 @@ midline_agent/diagnostic/brainvlm_midline/datasets.py
 midline_agent/diagnostic/brainvlm_midline/llama.py
 midline_agent/diagnostic/brainvlm_midline/model.py
 midline_agent/diagnostic/brainvlm_midline/prompts.py
+midline_agent/diagnostic/brainvlm_midline/training.py
 midline_agent/diagnostic/brainvlm_midline/vision.py
 midline_agent/diagnostic/brainvlm_runtime.py
 midline_agent/diagnostic/checkpoints.py
@@ -74,7 +76,7 @@ scripts/run_tumor_prediction.sh
 scripts/run_who_grading.sbatch
 scripts/run_who_grading.sh
 scripts/train_attention_mil.py
-scripts/train_brainvlm.sh
+scripts/train_brainvlm_midline.py
 test_data/utsw_glioma_bt0156/ATTRIBUTION.md
 test_data/utsw_glioma_bt0156/annotations.json
 test_data/utsw_glioma_bt0156/images/flair_004.png
@@ -109,11 +111,13 @@ test_data/utsw_glioma_bt0156/images/t2_128.png
 test_data/utsw_glioma_bt0156/images/t2_138.png
 test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/conftest.py
+tests/diagnostic/ddp_smoke.py
 tests/diagnostic/test_brainvlm_checkpoint.py
 tests/diagnostic/test_brainvlm_config.py
 tests/diagnostic/test_brainvlm_datasets.py
 tests/diagnostic/test_brainvlm_model.py
 tests/diagnostic/test_brainvlm_prompts.py
+tests/diagnostic/test_brainvlm_training.py
 tests/diagnostic/test_brainvlm_vision.py
 tests/diagnostic/test_slice_features.py
 tests/fixtures/brainvlm_training/annotations.json

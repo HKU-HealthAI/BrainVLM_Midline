@@ -267,6 +267,53 @@ class WhoGradeDataset(_TaskDataset):
         )
 
 
+class MixedTaskDataset(Dataset[TaskSample]):
+    """Seeded WHO/tumor stream used for WHO auxiliary training."""
+
+    def __init__(
+        self,
+        who_dataset: WhoGradeDataset,
+        tumor_dataset: TumorDataset,
+        *,
+        length: int,
+        seed: int,
+        who_fraction: float = 0.8,
+    ) -> None:
+        if not len(who_dataset) or not len(tumor_dataset):
+            raise DatasetContractError("mixed training requires both WHO and tumor samples")
+        self.who_dataset = who_dataset
+        self.tumor_dataset = tumor_dataset
+        self.length = length
+        self.seed = seed
+        self.who_fraction = who_fraction
+        self.epoch = 0
+        self.schedule = build_mixed_schedule(
+            length,
+            who_fraction=who_fraction,
+            seed=seed,
+            epoch=0,
+        )
+
+    def __len__(self) -> int:
+        return self.length
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+        self.who_dataset.set_epoch(epoch)
+        self.tumor_dataset.set_epoch(epoch)
+        self.schedule = build_mixed_schedule(
+            self.length,
+            who_fraction=self.who_fraction,
+            seed=self.seed,
+            epoch=epoch,
+        )
+
+    def __getitem__(self, index: int) -> TaskSample:
+        task = self.schedule[index]
+        dataset = self.who_dataset if task == "who" else self.tumor_dataset
+        return dataset[index % len(dataset)]
+
+
 def build_mixed_schedule(
     length: int,
     *,
