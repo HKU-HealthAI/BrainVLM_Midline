@@ -436,6 +436,11 @@ def train_epoch(
             optimizer_steps += 1
             pending = 0
     if pending:
+        remainder_scale = gradient_accumulation_steps / pending
+        for group in optimizer.param_groups:
+            for parameter in group["params"]:
+                if parameter.grad is not None:
+                    parameter.grad.mul_(remainder_scale)
         scheduler.step()
         if scaler is None:
             optimizer.step()

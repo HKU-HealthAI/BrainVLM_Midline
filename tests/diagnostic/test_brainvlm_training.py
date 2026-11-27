@@ -407,6 +407,46 @@ class RecordingScaler:
         self.updates += 1
 
 
+class ScalarLossModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, samples, reduction="mean"):
+        return {"loss": self.weight * samples["value"]}
+
+
+def _train_scalar_remainder(accumulation_steps: int) -> float:
+    model = ScalarLossModel()
+    optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
+    scheduler = WarmupCosineScheduler(
+        optimizer,
+        warmup_steps=0,
+        total_steps=1,
+        minimum_learning_rate=1.0,
+        warmup_learning_rate=1.0,
+    )
+    train_epoch(
+        model,
+        [{"value": torch.tensor(1.0)}, {"value": torch.tensor(3.0)}],
+        optimizer,
+        scheduler,
+        scaler=None,
+        gradient_accumulation_steps=accumulation_steps,
+        device=torch.device("cpu"),
+        amp=False,
+    )
+    return float(model.weight.detach())
+
+
+def test_train_epoch_normalizes_an_incomplete_accumulation_window() -> None:
+    complete_window = _train_scalar_remainder(accumulation_steps=2)
+    incomplete_window = _train_scalar_remainder(accumulation_steps=4)
+
+    assert complete_window == pytest.approx(-1.0)
+    assert incomplete_window == pytest.approx(complete_window)
+
+
 def test_train_epoch_accumulates_and_steps_scaler_once() -> None:
     model = TinyTrainModel()
     configure_trainable_parameters(model)
