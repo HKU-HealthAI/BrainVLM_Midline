@@ -91,6 +91,7 @@ test_data/utsw_glioma_bt0156/images/t2_028.png
 test_data/utsw_glioma_bt0156/images/t2_104.png
 test_data/utsw_glioma_bt0156/images/t2_128.png
 test_data/utsw_glioma_bt0156/images/t2_138.png
+test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/conftest.py
 tests/test_annotations.py
 tests/test_attention_mil.py

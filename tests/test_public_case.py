@@ -4,10 +4,18 @@ from pathlib import Path
 from PIL import Image
 
 from midline_agent.datasets.inference_annotations import load_inference_case
+from midline_agent.diagnostic.logits_mil import TUMOR_TYPE_NAMES
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CASE_ROOT = PROJECT_ROOT / "test_data" / "utsw_glioma_bt0156"
+EXPECTED_TUMOR_NAMES = {
+    "tumor_1": "H3K27M-mutated midline glioma",
+    "tumor_2": "Pediatric-type diffuse glioma",
+    "tumor_3": "IDH-wildtype glioblastoma",
+    "tumor_4": "IDH-mutated astrocytoma",
+    "tumor_5": "IDH-mutated oligodendroglioma",
+}
 
 
 def test_public_case_contains_exactly_30_decodable_label_free_slices() -> None:
@@ -47,6 +55,14 @@ def test_public_case_loads_all_four_modalities() -> None:
         "FLAIR": 8,
     }
     assert len(case.slices) == 30
+
+
+def test_public_case_records_checkpoint_tumor_class_names_without_patient_labels() -> None:
+    definitions = json.loads((CASE_ROOT / "tumor_label_definitions.json").read_text(encoding="utf-8"))
+
+    assert definitions == EXPECTED_TUMOR_NAMES
+    assert definitions == dict(TUMOR_TYPE_NAMES)
+    assert "BT0156" not in json.dumps(definitions)
 
 
 def test_public_case_has_complete_tcia_attribution_and_derivative_notice() -> None:

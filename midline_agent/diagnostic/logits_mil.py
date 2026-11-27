@@ -6,6 +6,7 @@ import pickle
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 import torch
 
@@ -14,6 +15,15 @@ from midline_agent.datasets.inference_annotations import InferenceSlice
 
 
 TUMOR_TYPES = ("tumor_1", "tumor_2", "tumor_3", "tumor_4", "tumor_5")
+TUMOR_TYPE_NAMES = MappingProxyType(
+    {
+        "tumor_1": "H3K27M-mutated midline glioma",
+        "tumor_2": "Pediatric-type diffuse glioma",
+        "tumor_3": "IDH-wildtype glioblastoma",
+        "tumor_4": "IDH-mutated astrocytoma",
+        "tumor_5": "IDH-mutated oligodendroglioma",
+    }
+)
 SLICES_PER_MODALITY = 5
 
 

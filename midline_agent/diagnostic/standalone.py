@@ -15,11 +15,11 @@ import torch
 from midline_agent.datasets.annotations import MODALITIES
 from midline_agent.datasets.inference_annotations import InferenceCase, InferenceSlice
 
-from .logits_mil import LogitsMilPredictor, TUMOR_TYPES, align_slice_logits
+from .logits_mil import LogitsMilPredictor, TUMOR_TYPES, TUMOR_TYPE_NAMES, align_slice_logits
 from .who_grade import vote_who_grade_for_tumor
 
 
-RESULT_SCHEMA_VERSION = "1.0"
+RESULT_SCHEMA_VERSION = "1.1"
 FIXED_GRADE_4_TUMORS = frozenset({"tumor_1", "tumor_3"})
 
 
@@ -65,11 +65,16 @@ class TumorPredictionResult:
     preprocessing: Mapping[str, object]
     schema_version: str = RESULT_SCHEMA_VERSION
 
+    @property
+    def tumor_name(self) -> str:
+        return TUMOR_TYPE_NAMES[self.tumor_type]
+
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
             "patient_id": self.patient_id,
             "tumor_type": self.tumor_type,
+            "tumor_name": self.tumor_name,
             "logits": list(self.logits),
             "probabilities": list(self.probabilities),
             "slice_count": self.slice_count,
@@ -94,11 +99,16 @@ class WhoGradePredictionResult:
     preprocessing: Mapping[str, object]
     schema_version: str = RESULT_SCHEMA_VERSION
 
+    @property
+    def tumor_name(self) -> str:
+        return TUMOR_TYPE_NAMES[self.tumor_type]
+
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
             "patient_id": self.patient_id,
             "tumor_type": self.tumor_type,
+            "tumor_name": self.tumor_name,
             "who_grade": self.who_grade,
             "method": self.method,
             "slice_count": self.slice_count,
