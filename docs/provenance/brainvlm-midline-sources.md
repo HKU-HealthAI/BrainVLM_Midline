@@ -77,6 +77,9 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/config.py` | `8650e78ee32f82242fc4689d35c9427ebf64e4dd1d0dd8bc3a2acfb342cc8978` | Clean behavioral reimplementation; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/prompts.py` | `3e3c5c9aa8195d585ecb0e76511621b9ff296f840a7da37dc890f2835b43f1be` | Clean behavioral reimplementation; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/vision.py` | `ba87b977ee6eae8c56ea2eb9bc385ff8c75c6d9ef6de29a48415410dd928a8b9` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/llama.py` | `9eb4265e30cd4fc811bfacf9a787e2e12590836d628e09b009a89569cadfeec3` | Clean wrapper around installed Transformers and PEFT; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/model.py` | `99c80b08c752b6a9414901ebddac44416dc60074cd49289dc225d9ec84f963be` | Clean behavioral reimplementation; MIT |
+| `midline_agent/diagnostic/checkpoints.py` | `79ad8650a061498d6f4075721f9d7bf1aa7b412189125bc26955bdaae07380a2` | Existing MIT implementation extended with strict BrainVLM-Midline loading |
 
 ## License Files
 

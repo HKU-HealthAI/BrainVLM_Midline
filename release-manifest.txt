@@ -34,6 +34,8 @@ midline_agent/diagnostic/attention_mil.py
 midline_agent/diagnostic/brainvlm_adapter.py
 midline_agent/diagnostic/brainvlm_midline/__init__.py
 midline_agent/diagnostic/brainvlm_midline/config.py
+midline_agent/diagnostic/brainvlm_midline/llama.py
+midline_agent/diagnostic/brainvlm_midline/model.py
 midline_agent/diagnostic/brainvlm_midline/prompts.py
 midline_agent/diagnostic/brainvlm_midline/vision.py
 midline_agent/diagnostic/brainvlm_runtime.py
@@ -105,7 +107,9 @@ test_data/utsw_glioma_bt0156/images/t2_128.png
 test_data/utsw_glioma_bt0156/images/t2_138.png
 test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/conftest.py
+tests/diagnostic/test_brainvlm_checkpoint.py
 tests/diagnostic/test_brainvlm_config.py
+tests/diagnostic/test_brainvlm_model.py
 tests/diagnostic/test_brainvlm_prompts.py
 tests/diagnostic/test_brainvlm_vision.py
 tests/test_annotations.py

@@ -189,22 +189,22 @@ git commit -m "feat: add BrainVLM-Midline vision encoder"
 - Create: `tests/diagnostic/test_brainvlm_checkpoint.py`
 - Modify: `midline_agent/diagnostic/checkpoints.py`
 
-- [ ] **Step 1: Write failing construction and state-layout tests**
+- [x] **Step 1: Write failing construction and state-layout tests**
 
 Use injected tiny tokenizer, causal LM, and vision stubs. Assert special-token insertion order, pad token `$$`, embedding resize, LoRA rank 8/alpha 32/dropout 0.05 on `q_proj` and `v_proj`, frozen foundations, trainable module names, 768-to-4096-to-4096 projector, 768-to-1408 compatibility layer, cross-attention keys, inputs-embeds forward behavior, final-position hidden/logit extraction, and deterministic generation arguments. Also assert checkpoint-compatible supervised sample construction: image placeholder splitting, prompt and target token concatenation, BOS placement, attention masks, `-100` masking for image/prompt/padding positions, unmasked answer tokens including the end symbol, maximum-length truncation, causal-LM label alignment, scalar mean reduction, and unreduced per-sample loss behavior.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_model.py tests/diagnostic/test_brainvlm_checkpoint.py`
 
 Expected: FAIL because the model modules are missing.
 
-- [ ] **Step 3: Implement the smallest compatible model**
+- [x] **Step 3: Implement the smallest compatible model**
 
 Prefer a thin adaptation around pinned Transformers `LlamaForCausalLM`. Implement the source-compatible supervised `forward(samples, reduction="mean")` path as well as inference. It must form image/prompt/answer embeddings and masks exactly as characterized by the tests, pass labels to the causal LM, and implement only `mean` and `none` reductions with explicit validation. Preserve released state names exactly, including:
 
 ```text
-llama_model.base_model.model.model.layers.*.*_proj.lora_[AB].default.weight
+llama_model.base_model.model.model.layers.*.*_proj.lora_[AB].weight
 visual_encoder.norm.{weight,bias}
 llama_proj_mlps.{0,2}.{weight,bias}
 v_q_project.{weight,bias}
@@ -213,19 +213,19 @@ cross_attention.{Wq,Wk,Wv,output_linear,norm}.{weight,bias}
 
 If the reference parity job later demonstrates that the pinned Transformers path changes forward or generation behavior, replace only the required Llama internals with the cleaned Apache-2.0 implementation and keep this public interface unchanged.
 
-- [ ] **Step 4: Implement strict checkpoint loading**
+- [x] **Step 4: Implement strict checkpoint loading**
 
 Accept only a mapping containing `model`; reject unknown keys, missing required manifest keys, incompatible shapes, non-tensors, and non-finite floating tensors. Permit foundation parameters absent from the trainable-only checkpoint. Return the sorted loaded key tuple and verify all 146 expected trainable tensors were loaded.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 6: Inspect real checkpoint manifests on CPU**
+- [x] **Step 6: Inspect real checkpoint manifests on CPU**
 
 Load only metadata/state tensors for both authoritative checkpoints and assert exactly 146 matching keys and shapes. Expected: PASS without constructing Llama.
 
-- [ ] **Step 7: Recheck provenance and commit the internal model**
+- [x] **Step 7: Recheck provenance and commit the internal model**
 
 Update the provenance inventory for `llama.py` and `model.py`, including final release digests and the precise distinction between behaviorally reimplemented project code and any retained licensed code. Do not commit until all included derived material is covered.
 
