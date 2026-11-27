@@ -60,7 +60,7 @@ def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
         text=True,
     )
     training = subprocess.run(
-        [sys.executable, "scripts/train_attention_mil.py", "--help"],
+        [sys.executable, "-m", "scripts.train_attention_mil", "--help"],
         cwd=root,
         capture_output=True,
         text=True,

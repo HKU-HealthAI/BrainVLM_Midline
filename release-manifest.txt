@@ -111,7 +111,6 @@ test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/__init__.py
 tests/acceptance/__init__.py
 tests/acceptance/run_installed_diagnostic.py
-tests/conftest.py
 tests/diagnostic/__init__.py
 tests/diagnostic/ddp_smoke.py
 tests/diagnostic/test_brainvlm_checkpoint.py

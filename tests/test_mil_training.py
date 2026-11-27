@@ -167,7 +167,7 @@ def test_checkpoint_predictor_rejects_incompatible_features(tmp_path: Path) -> N
 def test_training_cli_requires_explicit_train_and_validation_splits() -> None:
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
-        [sys.executable, "scripts/train_attention_mil.py", "--help"],
+        [sys.executable, "-m", "scripts.train_attention_mil", "--help"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -179,6 +179,7 @@ def test_training_cli_requires_explicit_train_and_validation_splits() -> None:
     source = (root / "scripts/train_attention_mil.py").read_text(encoding="utf-8")
     assert "torch.save" not in source
     assert "torch.load" not in source
+    assert "sys.path" not in source
 
 
 def test_checkpoint_loader_wraps_invalid_safetensors_file(tmp_path: Path) -> None:
