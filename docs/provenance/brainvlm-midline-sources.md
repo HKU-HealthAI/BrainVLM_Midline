@@ -11,11 +11,29 @@ The historical local MiniGPT-4 research tree is not an independent Git
 checkout. Its containing repository reported the tree as untracked, so there
 is no defensible local source revision. This inventory therefore records
 immutable SHA-256 digests for the exact local files and does not invent a Git
-lineage. The official MiniGPT-4 repository was independently inspected at
-revision `d94738a7626ec43eba6c2cddf3cd2043f1a9689a`; that revision is an
+lineage. Embedded notices identify known upstream BSD-3-Clause material from
+MiniGPT-4 and LAVIS, but the project-specific modifications have no defensible
+Git lineage or independently established license. Consequently, uncertain
+local code is excluded from this release.
+
+The official [MiniGPT-4 repository](https://github.com/Vision-CAIR/MiniGPT-4)
+was independently inspected at revision
+`d94738a7626ec43eba6c2cddf3cd2043f1a9689a`; that immutable revision is an
 upstream reference, not a claim that the modified local tree exactly descends
-from it. The official LAVIS repository was independently inspected at revision
+from it. The official [LAVIS repository](https://github.com/salesforce/LAVIS)
+was independently inspected at revision
 `05cb670f47296522e24e7727e366b4a997d28582`.
+
+The HKU-HealthAI [BrainVLM
+repository](https://github.com/HKU-HealthAI/BrainVLM) identifies the related
+project as *A Vision-Language Foundation Model for Comprehensive Brain Tumor
+Diagnosis from Preoperative Multimodal Data* by Yinong Wang et al. Its README
+states that the project builds on MiniGPT-4. BrainVLM is cited only as related
+work and as a related repository. No license is inferred for BrainVLM because
+no license was identified at the repository root during this source review.
+No code expression from BrainVLM is included. For the local project-specific
+work, only behavior and checkpoint observations informed a clean MIT
+reimplementation.
 
 ## Ownership Rule
 
@@ -23,7 +41,8 @@ Project-specific prompts, task behavior, state names, and workflow contracts
 are reimplemented from documented behavior and checkpoint observations. New
 implementation text authored for this repository is covered by the repository
 MIT license and attributed to MidlineAgent contributors. It is not a verbatim
-copy of the historical research files.
+copy of the historical research files. Known upstream BSD-3-Clause material is
+identified below; all uncertain local code is excluded rather than relicensed.
 
 If numerical parity later requires retained source text from MiniGPT-4 or
 LAVIS, the released file must carry a prominent modification notice and the
@@ -38,16 +57,16 @@ behavior instead.
 
 | Local source path | SHA-256 | Declared origin and license | Use in release |
 | --- | --- | --- | --- |
-| `minigpt4/models/minigpt4.py` | `4688da6ff638ba6160e3c8fdbd61a2a9ea47dc9d46bb030a3475f01d3330c4ae` | Modified MiniGPT-4 project source; upstream project is BSD-3-Clause, copyright 2023 Deyao Zhu | Architecture and state-layout behavior only |
-| `minigpt4/models/minigpt_base.py` | `fc6ce17024e9c5ee602b11bdf65d38f11866b9a5750c10b706936817ee786bd8` | Modified MiniGPT-4 project source; upstream project is BSD-3-Clause, copyright 2023 Deyao Zhu | Prompt wrapping, supervised input, and generation behavior only |
-| `minigpt4/models/base_model.py` | `1ec55a1c764bf45244ac34f7dfc91c332c04a24d2300f350a197612d5a8ff907` | LAVIS-derived source; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Autocast and model utility behavior only |
-| `minigpt4/models/modeling_llama.py` | `04e3d6636b33534e72443c3387eaa490b2821f252f9c4cebbffc1b9ad9565af9` | Local adaptation around the Llama implementation below | Loss-reduction behavior only; no planned source copy |
-| `minigpt4/models/modelling_llama_source.py` | `8df5eae8ed5d3219a1b8e894fc587fe75741c80f2dce1b7c68ec29bd06103219` | Hugging Face and EleutherAI-derived source; Apache-2.0 | Potential parity fallback only; excluded unless the gate above is completed |
-| `minigpt4/datasets/datasets/caption_datasets.py` | `1dd4fffbf27966d7f1d26b524226b183e4757b8b36ef1d7a44d77a15288e4d0d` | LAVIS-derived file with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Tumor and WHO dataset behavior only |
-| `minigpt4/common/optims.py` | `0b6dc7e70464a24c47594598298cbbae516557053855bc1a0cc17b78f92a86d3` | LAVIS-derived source; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Scheduler behavior only |
-| `minigpt4/runners/runner_base.py` | `bb1377f8910bd7e8f3c7621702ffdb53f29ec2531333072e53fa5209dbeef402` | LAVIS-derived source with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Optimizer, checkpoint, and resume behavior only |
-| `minigpt4/tasks/base_task.py` | `2050b156d642cf253f4d1761a66495141efe3adbde927f68d36dde764cf61904` | LAVIS-derived source with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | AMP and accumulation behavior only |
-| `train.py` | `6bf702df2188215a32d071137fb0be12fce0fb957bd265fb43cbe8809413b453` | LAVIS-derived source with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Seed and distributed-launch behavior only |
+| `minigpt4/models/minigpt4.py` | `4688da6ff638ba6160e3c8fdbd61a2a9ea47dc9d46bb030a3475f01d3330c4ae` | Embedded notice identifies MiniGPT-4 BSD-3-Clause material, copyright 2023 Deyao Zhu; local modifications have no independently established license | Uncertain source text excluded; architecture and state-layout behavior only |
+| `minigpt4/models/minigpt_base.py` | `fc6ce17024e9c5ee602b11bdf65d38f11866b9a5750c10b706936817ee786bd8` | Embedded notice identifies MiniGPT-4 BSD-3-Clause material, copyright 2023 Deyao Zhu; local modifications have no independently established license | Uncertain source text excluded; prompt wrapping, supervised input, and generation behavior only |
+| `minigpt4/models/base_model.py` | `1ec55a1c764bf45244ac34f7dfc91c332c04a24d2300f350a197612d5a8ff907` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; autocast and model utility behavior only |
+| `minigpt4/models/modeling_llama.py` | `04e3d6636b33534e72443c3387eaa490b2821f252f9c4cebbffc1b9ad9565af9` | Local adaptation with no defensible lineage or independently established license | Source text excluded; loss-reduction behavior only |
+| `minigpt4/models/modelling_llama_source.py` | `8df5eae8ed5d3219a1b8e894fc587fe75741c80f2dce1b7c68ec29bd06103219` | Headers identify Hugging Face and EleutherAI Apache-2.0 material; local modification status is not established | Source text excluded; potential parity behavior reference only |
+| `minigpt4/datasets/datasets/caption_datasets.py` | `1dd4fffbf27966d7f1d26b524226b183e4757b8b36ef1d7a44d77a15288e4d0d` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; tumor and WHO dataset behavior only |
+| `minigpt4/common/optims.py` | `0b6dc7e70464a24c47594598298cbbae516557053855bc1a0cc17b78f92a86d3` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modification status is not established | Source text excluded; scheduler behavior only |
+| `minigpt4/runners/runner_base.py` | `bb1377f8910bd7e8f3c7621702ffdb53f29ec2531333072e53fa5209dbeef402` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; optimizer, checkpoint, and resume behavior only |
+| `minigpt4/tasks/base_task.py` | `2050b156d642cf253f4d1761a66495141efe3adbde927f68d36dde764cf61904` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; AMP and accumulation behavior only |
+| `train.py` | `6bf702df2188215a32d071137fb0be12fce0fb957bd265fb43cbe8809413b453` | Embedded notice identifies LAVIS BSD-3-Clause material, copyright 2022 Salesforce, Inc.; local modifications have no independently established license | Uncertain source text excluded; seed and distributed-launch behavior only |
 
 ## Final Release Mapping
 

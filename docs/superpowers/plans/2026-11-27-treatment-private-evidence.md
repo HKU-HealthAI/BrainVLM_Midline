@@ -144,7 +144,7 @@ State that private evidence must remain outside the Git checkout in a
 caller-owned, deployment-controlled location. Explain that deployment-owned code
 must implement `EvidenceProvider`, return a bounded tuple of `EvidenceItem`
 values with non-identifying opaque source IDs, and pass the provider through
-`MidlineOrchestrator(treatment_providers=(provider,))`. State explicitly that
+`MidlineOrchestrator(client, treatment_providers=(provider,))`. State explicitly that
 `midline-run` does not automatically discover a private database.
 
 Clarify that the public package validates interface-level operation but cannot
@@ -168,7 +168,7 @@ results, and privacy review of all metadata.
 Repeat the deployment boundary in this detailed provider document: private
 evidence belongs outside the Git checkout; deployment-owned code implements
 `EvidenceProvider` and injects it with
-`MidlineOrchestrator(treatment_providers=(provider,))`; and `midline-run` does
+`MidlineOrchestrator(client, treatment_providers=(provider,))`; and `midline-run` does
 not automatically discover or load a private database.
 
 - [ ] **Step 5: Run focused documentation and Treatment tests**

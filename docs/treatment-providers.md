@@ -14,9 +14,23 @@ database loader.
 
 A deployment implements `EvidenceProvider`, converts authorized retrieval
 results into a fully materialized tuple of validated `EvidenceItem` values, and
-passes the provider through
-`MidlineOrchestrator(treatment_providers=(provider,))`. Lazy iterables are
-rejected without iteration. The public `midline-run` command
+passes the provider through the orchestrator. This integration fragment assumes
+`provider` is an already constructed deployment-owned `EvidenceProvider`:
+
+```python
+import os
+
+from midline_agent.orchestrator import MidlineOrchestrator
+from midline_agent.treatment.client import OpenAiResponsesClient
+
+client = OpenAiResponsesClient(api_key=os.environ["OPENAI_API_KEY"], model=os.environ["OPENAI_MODEL"])
+orchestrator = MidlineOrchestrator(
+    client,
+    treatment_providers=(provider,),
+)
+```
+
+Lazy iterables are rejected without iteration. The public `midline-run` command
 does not automatically discover or load a private database; deployment-owned
 code must construct the orchestrator when private evidence is required.
 

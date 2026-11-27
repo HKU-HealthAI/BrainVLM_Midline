@@ -94,6 +94,43 @@ def test_readme_is_self_contained_and_documents_public_workflow_boundaries() -> 
     assert "/secure/" not in readme
 
 
+def test_published_orchestrator_examples_supply_the_positional_llm_client() -> None:
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="ascii")
+    provider_docs = (PROJECT_ROOT / "docs" / "treatment-providers.md").read_text(
+        encoding="ascii"
+    )
+    normalized_readme = " ".join(readme.split())
+    normalized_provider_docs = " ".join(provider_docs.split())
+
+    assert "MidlineOrchestrator(None, survival_workflow=workflow)" in readme
+    assert "no Treatment LLM client" in normalized_readme
+    assert "Treatment is recorded as unavailable" in normalized_readme
+
+    treatment_example = (
+        'client = OpenAiResponsesClient(api_key=os.environ["OPENAI_API_KEY"], '
+        'model=os.environ["OPENAI_MODEL"])'
+    )
+    orchestrator_example = (
+        "orchestrator = MidlineOrchestrator( client, treatment_providers=(provider,), )"
+    )
+    for content in (normalized_readme, normalized_provider_docs):
+        assert "from midline_agent.orchestrator import MidlineOrchestrator" in content
+        assert (
+            "from midline_agent.treatment.client import OpenAiResponsesClient" in content
+        )
+        assert treatment_example in content
+        assert orchestrator_example in content
+
+    for path in PROJECT_ROOT.rglob("*.md"):
+        content = path.read_text(encoding="ascii")
+        for match in re.finditer(r"MidlineOrchestrator\(\s*([^,\n)]*)", content):
+            first_argument = match.group(1)
+            assert "=" not in first_argument, (
+                f"{path.relative_to(PROJECT_ROOT)} omits the positional llm_client: "
+                f"{match.group(0)}"
+            )
+
+
 def test_brainvlm_runtime_documentation_records_assets_schema_and_scope() -> None:
     documentation = (PROJECT_ROOT / "docs" / "brainvlm-midline.md").read_text(
         encoding="ascii"
@@ -157,6 +194,11 @@ def test_notices_and_licenses_record_precise_upstream_attribution() -> None:
         "Llama 3.1",
         "subject to its own license",
         "related BrainVLM work",
+        "https://github.com/HKU-HealthAI/BrainVLM",
+        "HKU-HealthAI",
+        "A Vision-Language Foundation Model for Comprehensive Brain Tumor Diagnosis from Preoperative Multimodal Data",
+        "BrainVLM licensing is not inferred",
+        "No code expression from BrainVLM is included",
         "No comparison code is included",
     )
     assert all(item in normalized_notices for item in required)
@@ -207,6 +249,23 @@ def test_provenance_inventory_covers_final_derived_files_with_current_digests() 
         assert digest_rows[relative_path] == actual
     assert "no defensible local source revision" in provenance
     assert "does not invent a Git lineage" in " ".join(provenance.split())
+    required_attribution = (
+        "https://github.com/Vision-CAIR/MiniGPT-4",
+        "https://github.com/salesforce/LAVIS",
+        "https://github.com/HKU-HealthAI/BrainVLM",
+        "HKU-HealthAI",
+        "No license is inferred for BrainVLM",
+        "No code expression from BrainVLM is included",
+        "project-specific modifications have no defensible Git lineage or independently established license",
+        "only behavior and checkpoint observations",
+        "clean MIT reimplementation",
+        "Known upstream BSD-3-Clause material",
+        "uncertain local code is excluded",
+    )
+    assert all(item in " ".join(provenance.split()) for item in required_attribution)
+
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="ascii")
+    assert "https://github.com/HKU-HealthAI/BrainVLM" in readme
 
 
 def test_env_template_exposes_only_official_openai_configuration() -> None:

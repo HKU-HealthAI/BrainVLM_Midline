@@ -7,17 +7,27 @@ packages are not relicensed by this repository.
 
 ## BrainVLM-related implementation
 
-The internal BrainVLM-Midline model is a clean, modified implementation of task
-behavior and checkpoint contracts informed by related BrainVLM work. The
-related work builds on MiniGPT-4 and LAVIS. MidlineAgent ships its own focused
-training and inference source and does not require those project source trees
-to run.
+The internal BrainVLM-Midline model is a clean MIT reimplementation of task
+behavior and checkpoint contracts. It cites the HKU-HealthAI
+[BrainVLM repository](https://github.com/HKU-HealthAI/BrainVLM), *A
+Vision-Language Foundation Model for Comprehensive Brain Tumor Diagnosis from
+Preoperative Multimodal Data* by Yinong Wang et al., as related work. That
+repository states that BrainVLM builds on MiniGPT-4. BrainVLM licensing is not
+inferred because no license was identified at the repository root during the
+source review. No code expression from BrainVLM is included. Only behavior and
+checkpoint observations from the related BrainVLM work informed the
+reimplementation.
 
-MiniGPT-4 is BSD-3-Clause software, Copyright 2023 Deyao Zhu. The complete
-notice is in `licenses/BSD-3-Clause-MiniGPT4.txt`.
+MidlineAgent ships its own focused training and inference source and does not
+require any of these project source trees to run.
 
-LAVIS is BSD-3-Clause software, Copyright (c) 2022 Salesforce, Inc. The
-complete notice is in `licenses/BSD-3-Clause-LAVIS.txt`.
+[MiniGPT-4](https://github.com/Vision-CAIR/MiniGPT-4) is BSD-3-Clause
+software, Copyright 2023 Deyao Zhu. The complete notice is in
+`licenses/BSD-3-Clause-MiniGPT4.txt`.
+
+[LAVIS](https://github.com/salesforce/LAVIS) is BSD-3-Clause software,
+Copyright (c) 2022 Salesforce, Inc. The complete notice is in
+`licenses/BSD-3-Clause-LAVIS.txt`.
 
 The source ownership inventory, immutable local-source digests, inspected
 upstream revisions, modifications, and final released-file digests are in

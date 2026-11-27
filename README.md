@@ -246,10 +246,19 @@ repository.
 
 There is no public Survival command that guesses a deployment's data schema or
 fitted-model locations. Construct a callable or object with a `run` method and
-inject it as `MidlineOrchestrator(survival_workflow=workflow)`. The callable
-receives the validated case and Diagnostic result and returns a
-`midline_agent.schema.SurvivalResult`. See `docs/survival-agent.md` for the
-public API boundary.
+inject it explicitly:
+
+```python
+from midline_agent.orchestrator import MidlineOrchestrator
+
+orchestrator = MidlineOrchestrator(None, survival_workflow=workflow)
+```
+
+Here, `None` fills the required `llm_client` position and means that no
+Treatment LLM client is configured. The Survival workflow can run, but
+Treatment is recorded as unavailable. The callable receives the validated case
+and Diagnostic result and returns a `midline_agent.schema.SurvivalResult`. See
+`docs/survival-agent.md` for the public API boundary.
 
 ## Treatment Sub-Agent
 
@@ -261,10 +270,25 @@ request timeout, and `store=false`.
 The public Treatment boundary contains no private internal database or
 evidence. Deployment-owned code implements `EvidenceProvider`, returns a
 bounded tuple of `EvidenceItem` values with non-identifying opaque source IDs,
-and injects it through
-`MidlineOrchestrator(treatment_providers=(provider,))`. The public command
-does not automatically load private evidence. See `docs/treatment-providers.md` for
-the trust, privacy, persistence, and report-validation contracts.
+and injects it through the orchestrator. This integration fragment assumes
+`provider` is an already constructed deployment-owned `EvidenceProvider`:
+
+```python
+import os
+
+from midline_agent.orchestrator import MidlineOrchestrator
+from midline_agent.treatment.client import OpenAiResponsesClient
+
+client = OpenAiResponsesClient(api_key=os.environ["OPENAI_API_KEY"], model=os.environ["OPENAI_MODEL"])
+orchestrator = MidlineOrchestrator(
+    client,
+    treatment_providers=(provider,),
+)
+```
+
+The public command does not automatically load private evidence. See
+`docs/treatment-providers.md` for the trust, privacy, persistence, and
+report-validation contracts.
 
 ## Documentation
 
@@ -277,10 +301,14 @@ the trust, privacy, persistence, and report-validation contracts.
 
 ## Acknowledgements
 
-The internal BrainVLM-Midline implementation derives task behavior and
-checkpoint compatibility from related BrainVLM and MiniGPT-4 work. MiniGPT-4
-builds on LAVIS. The runtime uses the installed Transformers, PEFT, OpenCLIP,
-and BiomedCLIP ecosystems, and Llama 3.1-8B Instruct subject to its license and
+The internal BrainVLM-Midline implementation cites the HKU-HealthAI
+[BrainVLM repository](https://github.com/HKU-HealthAI/BrainVLM), *A
+Vision-Language Foundation Model for Comprehensive Brain Tumor Diagnosis from
+Preoperative Multimodal Data* by Yinong Wang et al., as related work. The
+repository states that BrainVLM builds on MiniGPT-4, which builds on LAVIS.
+BrainVLM licensing is not inferred, and no code expression from BrainVLM is
+included here. The runtime uses the installed Transformers, PEFT, OpenCLIP, and
+BiomedCLIP ecosystems, and Llama 3.1-8B Instruct subject to its license and
 model-access terms. Orchestration uses the official OpenAI Python SDK. See
 `THIRD_PARTY_NOTICES.md` and `licenses/` for the precise notices and license
 texts. These acknowledgements do not imply a dependency on another project

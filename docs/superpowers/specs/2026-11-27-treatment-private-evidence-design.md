@@ -24,7 +24,7 @@ responsibilities.
 A deployment implements the existing `EvidenceProvider` protocol and converts
 authorized retrieval results into a fully materialized tuple of `EvidenceItem`
 values. The provider is passed to
-`MidlineOrchestrator(treatment_providers=(provider,))`. The public package does
+`MidlineOrchestrator(client, treatment_providers=(provider,))`. The public package does
 not inspect the private directory or infer a database format.
 
 The integrated `midline-run` CLI does not automatically discover or load a
@@ -74,7 +74,7 @@ The README introduction, release boundary, and Treatment section will:
 
 - state that no internal database or private evidence is distributed;
 - direct deployments to keep private evidence outside the Git checkout;
-- identify `EvidenceProvider` and `MidlineOrchestrator(treatment_providers=...)`
+- identify `EvidenceProvider` and `MidlineOrchestrator(client, treatment_providers=...)`
   as the supported injection boundary;
 - state that `midline-run` does not automatically load private evidence; and
 - distinguish interface-level operability from reproduction of private-data
@@ -92,7 +92,7 @@ records, example patient data, or a generic database loader.
 ## Verification
 
 Verification will add an integration test that injects a synthetic provider
-through `MidlineOrchestrator(treatment_providers=...)`, confirms that the full
+through `MidlineOrchestrator(client, treatment_providers=...)`, confirms that the full
 in-memory result retains its evidence, and confirms that `CaseState.to_trace()`
 omits evidence excerpts and URLs. A CLI test will confirm that the public CLI
 has no private-provider discovery or database-path option.
