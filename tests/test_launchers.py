@@ -50,7 +50,7 @@ def test_launcher_contains_no_private_or_cluster_specific_values(launcher: Path)
         r"CUDA_VISIBLE_DEVICES",
         r"#SBATCH\s+--(?:account|partition|mail-user)",
         r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-        r"nimabo",
+        r"relay[_-]?service",
         r"OPENAI_API_KEY",
     )
 
