@@ -51,6 +51,7 @@ FORBIDDEN_PARTS = {
     "baseline",
     "baselines",
     "cache",
+    "checkpoint",
     "checkpoints",
     "demo",
     "demos",
@@ -82,6 +83,10 @@ FORBIDDEN_ARTIFACT_NAME = re.compile(
     r"(?:^|[_-])(?:prediction|result)(?:s)?(?:[_-]|$)",
     re.IGNORECASE,
 )
+GENERATED_FEATURE_ARTIFACT_NAME = re.compile(
+    r"(?:^|[_-])features?(?:[_-]|$)",
+    re.IGNORECASE,
+)
 RESULT_ARTIFACT_SUFFIXES = {".csv", ".json", ".jsonl", ".tsv", ".xls", ".xlsx"}
 OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 PROVIDER_SECRET_PATTERNS = (
@@ -103,6 +108,11 @@ PRIVATE_PATH_PATTERN = re.compile(
     rf"(?:/(?:{'user' + 'home'}|{'ho' + 'me'}|{'Us' + 'ers'})/[^\s'\"]+|[A-Za-z]:\\{'Us' + 'ers'}\\[^\s'\"]+)",
     re.IGNORECASE,
 )
+PRIVATE_SERVER_PATH_PATTERN = re.compile(
+    rf"/{'pro' + 'jects'}/[^\s'\"`]+",
+    re.IGNORECASE,
+)
+URL_PATTERN = re.compile(r"https?://[^\s'\"`]+", re.IGNORECASE)
 HAN_PATTERN = re.compile("[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f]")
 CUSTOM_ENDPOINT_TERMS = (
     "OPENAI_BASE" + "_URL",
@@ -141,15 +151,24 @@ REMOVED_CLI_OPTIONS = (
     "--" + "model-factory",
     "--" + "source-root",
 )
-TEXT_INTERFACE_SUFFIXES = {".env", ".json", ".md", ".rst", ".sbatch", ".sh", ".toml", ".txt", ".yaml", ".yml"}
-SHELL_SUFFIXES = {".sbatch", ".sh"}
+TEXT_INTERFACE_SUFFIXES = {
+    ".bash",
+    ".env",
+    ".json",
+    ".md",
+    ".rst",
+    ".sbatch",
+    ".sh",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+SHELL_SUFFIXES = {".bash", ".sbatch", ".sh"}
 LEGACY_RUNTIME_ROOT = "mini" + "gpt4"
 PROHIBITION_MARKERS = (
-    "absent",
-    "delete",
     "do not",
     "does not",
-    "excluded",
     "forbid",
     "must not",
     "neither",
@@ -157,8 +176,6 @@ PROHIBITION_MARKERS = (
     "not accept",
     "not committed",
     "reject",
-    "remove",
-    "scan",
     "unset",
     "without",
 )
@@ -205,7 +222,12 @@ def _has_forbidden_path(path: Path, root: Path | None = None) -> bool:
         return True
     if FORBIDDEN_PROGRAM_NAME.search(path.stem):
         return True
-    return path.suffix.lower() in RESULT_ARTIFACT_SUFFIXES and bool(FORBIDDEN_ARTIFACT_NAME.search(path.stem))
+    if path.suffix.lower() not in RESULT_ARTIFACT_SUFFIXES:
+        return False
+    return bool(
+        FORBIDDEN_ARTIFACT_NAME.search(path.stem)
+        or GENERATED_FEATURE_ARTIFACT_NAME.search(path.stem)
+    )
 
 
 def _is_public_test_png_path(path: Path, root: Path | None) -> bool:
@@ -366,6 +388,17 @@ def _python_target_is_removed_environment(node: ast.AST, aliases: dict[str, str]
     return owner in {"os.environ", "os.environb"} and key in REMOVED_ENVIRONMENT_NAMES
 
 
+def _python_mapping_has_removed_environment(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Dict):
+            if any(_python_literal_value(key) in REMOVED_ENVIRONMENT_NAMES for key in child.keys):
+                return True
+        elif isinstance(child, ast.Call) and _python_qualified_name(child.func, {}) == "dict":
+            if any(keyword.arg in REMOVED_ENVIRONMENT_NAMES for keyword in child.keywords):
+                return True
+    return False
+
+
 def _is_unofficial_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme.lower() in {"http", "https"} and parsed.hostname not in {
@@ -390,6 +423,9 @@ def _python_policy_codes(content: str) -> set[str]:
         elif isinstance(node, ast.ImportFrom):
             if node.module and node.module.split(".", maxsplit=1)[0].lower() == LEGACY_RUNTIME_ROOT:
                 codes.add("external-runtime-import")
+
+        if isinstance(node, ast.Subscript) and _python_target_is_removed_environment(node, aliases):
+            codes.add("source-path-injection")
 
         if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
@@ -432,6 +468,16 @@ def _python_policy_codes(content: str) -> set[str]:
         if call_name in {"os.putenv", "os.environ.__setitem__", "os.environb.__setitem__"}:
             if node.args and _python_literal_value(node.args[0]) in REMOVED_ENVIRONMENT_NAMES:
                 codes.add("source-path-injection")
+        if call_name in {
+            "os.environ.get",
+            "os.environ.setdefault",
+            "os.environb.get",
+            "os.environb.setdefault",
+            "os.getenv",
+            "os.getenvb",
+        }:
+            if node.args and _python_literal_value(node.args[0]) in REMOVED_ENVIRONMENT_NAMES:
+                codes.add("source-path-injection")
         if call_name in {"os.environ.update", "os.environb.update"}:
             if any(value in REMOVED_ENVIRONMENT_NAMES for value in _python_string_values(node)):
                 codes.add("source-path-injection")
@@ -447,6 +493,9 @@ def _python_policy_codes(content: str) -> set[str]:
             "subprocess.Popen",
             "subprocess.run",
         }:
+            for keyword in node.keywords:
+                if keyword.arg == "env" and _python_mapping_has_removed_environment(keyword.value):
+                    codes.add("source-path-injection")
             strings = _python_string_values(node)
             compact = "".join(strings).lower()
             has_external_module = any(
@@ -551,15 +600,49 @@ def _python_has_credential_literal(content: str) -> bool | None:
     return False
 
 
-def _matches_release_path(path: Path, release_path: str) -> bool:
-    return path.as_posix().lower().endswith(release_path.lower())
-
-
-def _is_approved_prohibition_line(path: Path, lines: list[str], line_number: int) -> bool:
-    if not any(_matches_release_path(path, item) for item in APPROVED_PROHIBITION_PATHS):
+def _matches_release_path(path: Path, release_path: str, root: Path | None) -> bool:
+    if root is None:
         return False
-    context = " ".join(lines[max(0, line_number - 8) : line_number + 1]).lower()
-    return any(marker in context for marker in PROHIBITION_MARKERS)
+    try:
+        relative = path.absolute().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return relative.as_posix() == release_path
+
+
+def _line_has_prohibition_marker(line: str) -> bool:
+    lowered = line.lower()
+    return any(marker in lowered for marker in PROHIBITION_MARKERS)
+
+
+def _is_explicit_prohibition_line(lines: list[str], line_number: int) -> bool:
+    line = lines[line_number]
+    if _line_has_prohibition_marker(line):
+        return True
+    if line.startswith((" ", "\t")) and line_number > 0:
+        if _line_has_prohibition_marker(lines[line_number - 1]) and not _is_imperative_legacy_instruction(line):
+            return True
+    if not line.lstrip().startswith(("- ", "* ")):
+        return False
+    previous = line_number - 1
+    while previous >= 0:
+        stripped = lines[previous].strip().lower()
+        if not stripped or stripped.startswith(("- ", "* ")):
+            previous -= 1
+            continue
+        return stripped == "the repository must not:"
+    return False
+
+
+def _is_approved_prohibition_line(
+    path: Path,
+    lines: list[str],
+    line_number: int,
+    root: Path | None,
+) -> bool:
+    if not any(_matches_release_path(path, item, root) for item in APPROVED_PROHIBITION_PATHS):
+        return False
+    return _is_explicit_prohibition_line(lines, line_number)
 
 
 def _has_legacy_runtime_path(line: str) -> bool:
@@ -568,13 +651,13 @@ def _has_legacy_runtime_path(line: str) -> bool:
 
 def _is_imperative_legacy_instruction(line: str) -> bool:
     return re.search(
-        r"\b(?:add|clone|execute|import|install|load|run|use)\b",
+        r"^[ \t]*(?:[-*][ \t]+)?(?:add|clone|configure|execute|export|import|install|load|pass|run|set|source|use)\b",
         line,
         re.IGNORECASE,
     ) is not None
 
 
-def _text_policy_codes(path: Path, content: str) -> set[str]:
+def _text_policy_codes(path: Path, content: str, root: Path | None) -> set[str]:
     if path.suffix.lower() not in TEXT_INTERFACE_SUFFIXES and not path.name.startswith(".env"):
         return set()
 
@@ -584,13 +667,15 @@ def _text_policy_codes(path: Path, content: str) -> set[str]:
         has_removed_interface = any(name in line for name in REMOVED_ENVIRONMENT_NAMES) or any(
             option in line for option in REMOVED_CLI_OPTIONS
         )
-        if has_removed_interface and not _is_approved_prohibition_line(path, lines, line_number):
+        if has_removed_interface and not _is_approved_prohibition_line(
+            path, lines, line_number, root
+        ):
             codes.add("removed-source-interface")
 
         if _has_legacy_runtime_path(line):
             is_approved_reference = _matches_release_path(
-                path, APPROVED_PROVENANCE_PATH
-            ) or _matches_release_path(path, APPROVED_DESIGN_PATH)
+                path, APPROVED_PROVENANCE_PATH, root
+            ) or _matches_release_path(path, APPROVED_DESIGN_PATH, root)
             if not is_approved_reference or _is_imperative_legacy_instruction(line):
                 codes.add("external-runtime-import")
 
@@ -600,7 +685,21 @@ def _text_policy_codes(path: Path, content: str) -> set[str]:
     return codes
 
 
-def _content_violations(path: Path, content: str) -> list[Violation]:
+def _has_private_path(path: Path, content: str, root: Path | None) -> bool:
+    lines = content.splitlines()
+    for line_number, line in enumerate(lines):
+        without_urls = URL_PATTERN.sub("", line)
+        if PRIVATE_PATH_PATTERN.search(without_urls):
+            return True
+        if not PRIVATE_SERVER_PATH_PATTERN.search(without_urls):
+            continue
+        if _is_approved_prohibition_line(path, lines, line_number, root):
+            continue
+        return True
+    return False
+
+
+def _content_violations(path: Path, content: str, root: Path | None) -> list[Violation]:
     violations: list[Violation] = []
     lowered = content.lower()
     python_result = _python_has_credential_literal(content) if path.suffix.lower() == ".py" else None
@@ -619,7 +718,7 @@ def _content_violations(path: Path, content: str) -> list[Violation]:
         or _json_has_credential_literal(path, content)
     ):
         violations.append(Violation(path, "embedded-secret", "embedded credential detected"))
-    if PRIVATE_PATH_PATTERN.search(content):
+    if _has_private_path(path, content, root):
         violations.append(Violation(path, "private-path", "private absolute path detected"))
     if HAN_PATTERN.search(content):
         violations.append(Violation(path, "han-character", "Han character detected"))
@@ -641,7 +740,7 @@ def _content_violations(path: Path, content: str) -> list[Violation]:
         "source-path-injection": "Python source path injection detected",
     }
     existing_codes = {violation.code for violation in violations}
-    policy_codes = _text_policy_codes(path, content)
+    policy_codes = _text_policy_codes(path, content, root)
     if path.suffix.lower() == ".py":
         policy_codes.update(_python_policy_codes(content))
     for code in sorted(policy_codes - existing_codes):
@@ -689,7 +788,7 @@ def audit_paths(paths: Iterable[Path | CandidateSource], *, root: Path | None = 
         if "\x00" in content:
             violations.append(Violation(path, "binary-file", "binary files are not allowed"))
             continue
-        violations.extend(_content_violations(path, content))
+        violations.extend(_content_violations(path, content, audit_root))
     return violations
 
 

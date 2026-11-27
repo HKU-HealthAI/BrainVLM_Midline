@@ -198,6 +198,46 @@ def test_audit_rejects_result_and_environment_artifacts(tmp_path: Path, relative
     assert "forbidden-path" in _codes([path])
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "checkpoint/model.txt",
+        "features.json",
+        "feature.json",
+        "extracted_features.json",
+        "extracted_features.safetensors",
+    ],
+)
+def test_audit_rejects_singular_checkpoint_and_root_feature_artifacts(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    artifact = tmp_path / relative_path
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("generated\n", encoding="ascii")
+
+    assert "forbidden-path" in _codes([artifact])
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "midline_agent/diagnostic/feature_store.py",
+        "docs/feature-schema.md",
+        "tests/test_feature_store.py",
+    ],
+)
+def test_audit_allows_feature_source_documentation_and_tests(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True)
+    source.write_text("Feature contract.\n", encoding="ascii")
+
+    assert audit_paths([source], root=tmp_path) == []
+
+
 def test_audit_rejects_secret_checkpoint_private_path_and_symlink(tmp_path: Path) -> None:
     secret_file = tmp_path / ".env"
     checkpoint = tmp_path / "weights.safetensors"
@@ -743,6 +783,72 @@ def test_audit_ast_rejects_removed_environment_injection(
     assert _codes([module]) == {"source-path-injection"}
 
 
+def test_audit_ast_rejects_removed_environment_setdefault(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    python_path = "PYTHON" + "PATH"
+    module.write_text(
+        f'import os as operating_system\noperating_system.environ.setdefault("{python_path}", external_source)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize("method", ["run", "Popen", "call", "check_call", "check_output"])
+def test_audit_ast_rejects_removed_environment_in_subprocess_env(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    source_root = "BRAINVLM_SOURCE_" + "ROOT"
+    module.write_text(
+        "import subprocess as process\n"
+        f'process.{method}(["tool"], env={{"{source_root}": external_source}})\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize(
+    ("variable", "expression"),
+    [
+        ("BRAINVLM_" + "SOURCE", 'operating_system.environ["{variable}"]'),
+        ("BRAINVLM_SOURCE_" + "ROOT", 'operating_system.environ.get("{variable}")'),
+        ("PYTHON" + "PATH", 'operating_system.getenv("{variable}")'),
+    ],
+)
+def test_audit_ast_rejects_removed_environment_reads(
+    tmp_path: Path,
+    variable: str,
+    expression: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import os as operating_system\nvalue = " + expression.format(variable=variable) + "\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_allows_harmless_environment_reads_and_subprocess_env(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import os\n"
+        "import subprocess\n"
+        'home = os.environ["HOME"]\n'
+        'path = os.getenv("PATH")\n'
+        'key = os.environ.get("OPENAI_API_KEY")\n'
+        'subprocess.run(["tool"], env={"PATH": path})\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
 def test_audit_shell_scan_rejects_removed_environment_and_source_injection(
     tmp_path: Path,
 ) -> None:
@@ -752,6 +858,17 @@ def test_audit_shell_scan_rejects_removed_environment_and_source_injection(
     launcher.write_text(
         f'export {python_path}="${{{source_root}}}:${{{python_path}}}"\n'
         f'. "${{{source_root}}}/activate.sh"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface", "source-path-injection"}
+
+
+def test_audit_shell_scan_includes_bash_suffix(tmp_path: Path) -> None:
+    launcher = tmp_path / "run.bash"
+    python_path = "PYTHON" + "PATH"
+    launcher.write_text(
+        f'export {python_path}="/external"\nsource "/external/activate"\n',
         encoding="ascii",
     )
 
@@ -819,13 +936,51 @@ def test_audit_allows_removed_names_only_in_approved_prohibition_text(
         f"The release must not set {python_path} or expose {source_option}.\n",
         encoding="ascii",
     )
-    assert audit_paths([policy]) == []
+    assert audit_paths([policy], root=tmp_path) == []
 
     policy.write_text(
         f"Set {python_path}=/external and pass {source_option} to the command.\n",
         encoding="ascii",
     )
     assert _codes([policy]) == {"removed-source-interface"}
+
+
+def test_audit_does_not_allow_archive_suffix_spoof_of_approved_policy_path(
+    tmp_path: Path,
+) -> None:
+    approved_path = "docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md"
+    spoof = tmp_path / "archive" / approved_path
+    spoof.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    spoof.write_text(f"The release must not set {python_path}.\n", encoding="ascii")
+
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "removed-source-interface"
+    }
+
+
+def test_audit_prohibition_context_does_not_exempt_later_instruction(
+    tmp_path: Path,
+) -> None:
+    policy = (
+        tmp_path
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-11-27-self-contained-brainvlm-midline-design.md"
+    )
+    policy.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    source_option = "--" + "source-root"
+    policy.write_text(
+        f"The release must not expose {source_option}.\n"
+        f"  Set {python_path}=/external for the runtime.\n",
+        encoding="ascii",
+    )
+
+    assert {item.code for item in audit_paths([policy], root=tmp_path)} == {
+        "removed-source-interface"
+    }
 
 
 def test_audit_allows_legacy_source_paths_only_in_approved_provenance(
@@ -835,7 +990,7 @@ def test_audit_allows_legacy_source_paths_only_in_approved_provenance(
     provenance.parent.mkdir(parents=True)
     historical_path = "mini" + "gpt4/models/model.py"
     provenance.write_text(f"Historical source: `{historical_path}`.\n", encoding="ascii")
-    assert audit_paths([provenance]) == []
+    assert audit_paths([provenance], root=tmp_path) == []
 
     provenance.write_text(f"Import and execute `{historical_path}`.\n", encoding="ascii")
     assert _codes([provenance]) == {"external-runtime-import"}
@@ -843,6 +998,33 @@ def test_audit_allows_legacy_source_paths_only_in_approved_provenance(
     instructions = tmp_path / "docs" / "runtime.md"
     instructions.write_text(f"Install and import `{historical_path}`.\n", encoding="ascii")
     assert _codes([instructions]) == {"external-runtime-import"}
+
+    spoof = tmp_path / "archive" / "docs" / "provenance" / "brainvlm-midline-sources.md"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text(f"Historical source: `{historical_path}`.\n", encoding="ascii")
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "external-runtime-import"
+    }
+
+
+def test_audit_rejects_private_projects_path_without_placeholder_false_positives(
+    tmp_path: Path,
+) -> None:
+    private_path = "/" + "projects/private/model"
+    settings = tmp_path / "settings.py"
+    settings.write_text(f'MODEL_ROOT = "{private_path}"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+    documentation = tmp_path / "runtime.md"
+    documentation.write_text(
+        "#!/usr/bin/env bash\n"
+        "Use /path/to/model as a placeholder.\n"
+        "See https://example.invalid/projects/public/model.\n"
+        "See https://example.invalid/home/public/model.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([documentation]) == []
 
 
 def test_audit_rejects_prohibited_term_outside_policy_files(tmp_path: Path) -> None:
