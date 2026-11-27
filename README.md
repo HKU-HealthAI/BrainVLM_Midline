@@ -190,9 +190,10 @@ the equivalent direct CLI arguments.
 
 ### Generic adapter and training interfaces
 
-The external BrainVLM integration uses a narrow factory contract and never
-copies the external source or checkpoint into this repository. See
-`docs/external-brainvlm-adapter.md` for the required interface.
+The BrainVLM-Midline integration accesses the external BrainVLM source through
+a narrow factory contract and never copies the external source or checkpoint
+into this repository. See `docs/external-brainvlm-adapter.md` for the required
+interface.
 
 Extract versioned slice features into a safetensors artifact and JSON sidecar:
 
