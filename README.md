@@ -5,13 +5,16 @@ decision support in midline glioma. It coordinates Diagnostic, Survival, and
 Treatment Sub-Agents through a hybrid LLM Orchestrator. The Diagnostic
 Sub-Agent integrates BrainVLM-Midline, AttentionMIL, and tumor-conditioned
 WHO-grade prediction; the Survival Sub-Agent performs multimodal prognosis
-modelling; and the Treatment Sub-Agent produces evidence-grounded treatment
-reports.
+modelling; and the Treatment Sub-Agent produces structured treatment reports
+through deployment-injected evidence providers.
 
-This release provides the complete source code for the Diagnostic, Survival,
-and Treatment Sub-Agents. The orchestrator enforces the Diagnostic -> Survival
--> Treatment order in Python and uses the official OpenAI Responses API for
-validated handoffs and report synthesis.
+This release provides the complete public source code for the Diagnostic,
+Survival, and Treatment Sub-Agents, including public orchestration and report
+validation. It does not include the private evidence sources, database schemas,
+or deployment-owned retrieval code used in the authors' internal environment.
+The orchestrator enforces the Diagnostic -> Survival -> Treatment order in
+Python and uses the official OpenAI Responses API for validated handoffs and
+report synthesis.
 
 ## Table of Contents
 
@@ -33,6 +36,12 @@ contain diagnostic labels for that case, extracted features, model
 checkpoints, API credentials, generated reports, prediction outputs, or
 comparison-model implementations. BrainVLM source and all project checkpoints
 are distributed separately.
+
+The internal case database, local knowledge sources, physician-authored rules,
+private retrieval implementation, and derived records are not distributed.
+They are not required to inspect or test the public interfaces, but the public
+release cannot reproduce private-database retrieval or the report quality
+obtained with those unavailable sources.
 
 This software is for research use. It is not a medical device and must not be
 used to make autonomous diagnostic or treatment decisions.
@@ -258,6 +267,22 @@ accepts only injected evidence providers. No guideline corpus, case database,
 or web cache is bundled. The optional OpenAI web-search provider uses the same
 official Responses client. Reports validate source IDs against collected
 evidence before rendering.
+
+Private treatment evidence is not distributed with this repository. Keep any
+internal case database, local knowledge base, and physician-authored rules
+outside the Git checkout in a deployment-controlled location, such as
+`/secure/midlineagent/treatment_evidence/`. The example path is illustrative;
+access control, encryption, retention, and privacy review remain deployment
+responsibilities.
+
+Deployment-owned code must implement the `EvidenceProvider` protocol, return a
+bounded tuple of `EvidenceItem` values with non-identifying opaque source IDs,
+and inject the provider through
+`MidlineOrchestrator(treatment_providers=(provider,))`. The public
+`midline-run` command does not automatically discover or load a private
+database, and the repository does not define or infer a private database
+format. See `docs/treatment-providers.md` for the complete trust, persistence,
+and privacy boundary.
 
 Persisted traces hash the case identifier and omit MRI paths, raw clinical
 text, evidence excerpts, and URLs. Deployments remain responsible for local

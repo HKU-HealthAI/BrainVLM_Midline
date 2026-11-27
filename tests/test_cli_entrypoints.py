@@ -302,6 +302,23 @@ def test_readme_documents_reproducible_checkpoint_inference() -> None:
     assert "no patient data or example cases are bundled" not in readme
 
 
+def test_public_docs_define_private_treatment_evidence_boundary() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="ascii")
+    provider_docs = (root / "docs/treatment-providers.md").read_text(encoding="ascii")
+
+    for document in (readme, provider_docs):
+        assert "not distributed" in document
+        assert "outside the Git checkout" in document
+        assert "EvidenceProvider" in document
+        assert "treatment_providers" in document
+        assert "does not automatically" in document
+    assert "CaseState.to_trace()" in provider_docs
+    assert "trusted in-process" in provider_docs
+    assert "does not sandbox" in provider_docs
+    assert "non-identifying opaque source IDs" in provider_docs
+
+
 def test_data_schema_separates_label_free_inference_from_training_labels() -> None:
     root = Path(__file__).resolve().parents[1]
     schema = (root / "docs/data-schema.md").read_text(encoding="ascii")
