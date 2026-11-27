@@ -7,11 +7,10 @@ user-owned local knowledge, and user-owned similar-case providers through the
 physician-authored rules, deployment retrieval code, credentials, and derived
 records are not distributed.
 
-Private evidence must remain outside the Git checkout in a
-deployment-controlled location, for example
-`/secure/midlineagent/treatment_evidence/`. The path is illustrative rather
-than required. The public package does not inspect that directory, infer a
-private database format, or provide a generic database loader.
+Private evidence must remain outside the Git checkout in a caller-owned,
+deployment-controlled location. The public package does not inspect a
+conventional directory, infer a private database format, or provide a generic
+database loader.
 
 A deployment implements `EvidenceProvider`, converts authorized retrieval
 results into a fully materialized tuple of validated `EvidenceItem` values, and

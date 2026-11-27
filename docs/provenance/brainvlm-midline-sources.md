@@ -7,9 +7,9 @@ self-contained BrainVLM-Midline implementation. It is a pre-copy ownership
 gate: no non-trivial source text may enter the release unless its origin,
 copyright holder, license, and modifications are recorded here first.
 
-The local research tree at `/projects/MiniGPT-4` is not an independent Git
-checkout. Its containing repository reports that directory as untracked, so
-there is no defensible local source revision. This inventory therefore records
+The historical local MiniGPT-4 research tree is not an independent Git
+checkout. Its containing repository reported the tree as untracked, so there
+is no defensible local source revision. This inventory therefore records
 immutable SHA-256 digests for the exact local files and does not invent a Git
 lineage. The official MiniGPT-4 repository was independently inspected at
 revision `d94738a7626ec43eba6c2cddf3cd2043f1a9689a`; that revision is an
@@ -49,9 +49,9 @@ behavior instead.
 | `minigpt4/tasks/base_task.py` | `2050b156d642cf253f4d1761a66495141efe3adbde927f68d36dde764cf61904` | LAVIS-derived source with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | AMP and accumulation behavior only |
 | `train.py` | `6bf702df2188215a32d071137fb0be12fce0fb957bd265fb43cbe8809413b453` | LAVIS-derived source with project modifications; BSD-3-Clause, copyright 2022 Salesforce, Inc. | Seed and distributed-launch behavior only |
 
-## Planned Release Mapping
+## Final Release Mapping
 
-| Released path | Source material | Planned modification | Holder and release license |
+| Released path | Source material | Final modification | Holder and release license |
 | --- | --- | --- | --- |
 | `midline_agent/diagnostic/brainvlm_midline/config.py` | Approved public design and checkpoint manifest | New strict dataclasses and validators | MidlineAgent contributors; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/prompts.py` | Historical runtime prompts and the two dataset classes in `caption_datasets.py` | Clean English-only canonical prompt and label implementation | MidlineAgent contributors; MIT, with MiniGPT-4 and LAVIS acknowledged |
@@ -62,12 +62,9 @@ behavior instead.
 | `midline_agent/diagnostic/brainvlm_midline/collate.py` | Valid sample shapes observed in the dataset classes | New strict collator | MidlineAgent contributors; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/training.py` | LAVIS optimizer, scheduler, AMP, and checkpoint behavior | Clean focused training implementation without historical integrations | MidlineAgent contributors; MIT, with LAVIS acknowledged |
 | `midline_agent/diagnostic/brainvlm_runtime.py` | Existing MidlineAgent bridge and approved internal contract | Replace external loading with direct internal construction | MidlineAgent contributors; MIT |
+| `midline_agent/diagnostic/feature_store.py` | Existing MidlineAgent feature store and approved extraction contract | Extended with strict internal-model logits and hidden-feature schema | MidlineAgent contributors; MIT |
+| `scripts/extract_features.py` | Existing MidlineAgent extraction command and approved internal runtime contract | Rewired to the internal runtime with explicit label-free and labelled modes | MidlineAgent contributors; MIT |
 | `scripts/train_brainvlm_midline.py` | Approved training contract | New focused command | MidlineAgent contributors; MIT |
-
-Final released-file SHA-256 values and any changed derivation status will be
-added after implementation. A non-trivial copied block changes a row from
-clean reimplementation to derived source and triggers the corresponding
-file-header and license requirements before commit.
 
 ### Implemented Release Digests
 
@@ -84,6 +81,8 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `5240a6865f36747225cb458082a35ec502441ad0b388bd3dc29c17fac627a8a2` | Clean behavioral reimplementation of tumor and WHO dataset contracts; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/collate.py` | `3fafddb8b3a9a74dec005bd73e37d3bed2b734e1602dd94f87ff9afb8da0e974` | New strict task collator; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/training.py` | `88b65ff70668d84f3f3cf6e5060d0fd1f68496e63e1fdef89913975c99069aa7` | Clean focused training implementation; MIT |
+| `midline_agent/diagnostic/feature_store.py` | `9045ecc3b9cfb440aadebf6f43efa511b2b77522b060e1555812c802dd791b93` | Existing MIT feature store extended with the internal extraction schema |
+| `scripts/extract_features.py` | `a407839577cb0cb8014c7fc1e543074eed5532d395d8625f5b1bb414a28c19f0` | Internal BrainVLM-Midline feature extraction command; MIT |
 | `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
 | `scripts/predict_tumor.py` | `ad9bc821b944dba20527e1bb810bb67a9a9817bcecb6282a6eb396a411b7af4f` | Internal BrainVLM-Midline tumor command; MIT |
 | `scripts/predict_who_grade.py` | `db1e514fec5ff40275fef4327f268b8ef01faedf985a41cc73f4d827a48e8fb9` | Internal BrainVLM-Midline WHO grading command; MIT |

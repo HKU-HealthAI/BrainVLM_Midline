@@ -6,13 +6,11 @@ THIRD_PARTY_NOTICES.md
 configs/attention_mil.example.yaml
 configs/brainvlm_tumor.example.yaml
 configs/brainvlm_who.example.yaml
+docs/brainvlm-midline.md
 docs/data-schema.md
-docs/external-brainvlm-adapter.md
 docs/provenance/brainvlm-midline-sources.md
-docs/superpowers/plans/2026-11-27-checkpoint-inference.md
 docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md
 docs/superpowers/plans/2026-11-27-treatment-private-evidence.md
-docs/superpowers/specs/2026-11-27-checkpoint-inference-design.md
 docs/superpowers/specs/2026-11-27-self-contained-brainvlm-midline-design.md
 docs/superpowers/specs/2026-11-27-treatment-private-evidence-design.md
 docs/survival-agent.md
@@ -65,6 +63,7 @@ midline_agent/treatment/providers.py
 midline_agent/treatment/report.py
 pyproject.toml
 release-manifest.txt
+requirements/diagnostic-reference.txt
 scripts/__init__.py
 scripts/extract_features.py
 scripts/predict_tumor.py
@@ -135,6 +134,7 @@ tests/test_brainvlm_runtime.py
 tests/test_cli_entrypoints.py
 tests/test_diagnostic_adapter.py
 tests/test_diagnostic_workflow.py
+tests/test_documentation_contract.py
 tests/test_feature_store.py
 tests/test_inference_annotations.py
 tests/test_launchers.py

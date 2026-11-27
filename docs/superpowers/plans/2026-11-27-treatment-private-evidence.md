@@ -140,9 +140,8 @@ reports.
 
 - [ ] **Step 3: Document private evidence deployment in the Treatment section**
 
-State that private evidence must remain outside the Git checkout, using an
-illustrative deployment-controlled path such as
-`/secure/midlineagent/treatment_evidence/`. Explain that deployment-owned code
+State that private evidence must remain outside the Git checkout in a
+caller-owned, deployment-controlled location. Explain that deployment-owned code
 must implement `EvidenceProvider`, return a bounded tuple of `EvidenceItem`
 values with non-identifying opaque source IDs, and pass the provider through
 `MidlineOrchestrator(treatment_providers=(provider,))`. State explicitly that

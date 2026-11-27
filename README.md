@@ -2,309 +2,286 @@
 
 MidlineAgent is a multi-agent research framework for traceable clinical
 decision support in midline glioma. It coordinates Diagnostic, Survival, and
-Treatment Sub-Agents through a hybrid LLM Orchestrator. The Diagnostic
-Sub-Agent integrates BrainVLM-Midline, AttentionMIL, and tumor-conditioned
-WHO-grade prediction; the Survival Sub-Agent performs multimodal prognosis
-modelling; and the Treatment Sub-Agent produces structured treatment reports
-through deployment-injected evidence providers.
+Treatment Sub-Agents through a hybrid LLM Orchestrator. BrainVLM-Midline is one
+internal Diagnostic Sub-Agent model; it is not the title or complete scope of
+the MidlineAgent system.
 
-This release provides the complete public source code for the Diagnostic,
-Survival, and Treatment Sub-Agents, including public orchestration and report
-validation. It does not include the private evidence sources, database schemas,
-or deployment-owned retrieval code used in the authors' internal environment.
+This repository includes the modified training and inference source for
+BrainVLM-Midline, its patient-level MIL aggregation, tumor-conditioned WHO
+grading, the public Survival implementation, Treatment interfaces, and
+orchestration. The Diagnostic runtime imports this repository's Python package
+and does not call another source checkout. Model weights remain separate
+downloads.
+
 The orchestrator enforces the Diagnostic -> Survival -> Treatment order in
-Python and uses the official OpenAI Responses API for validated handoffs and
-report synthesis.
-
-## Table of Contents
-
-- [Release boundary](#release-boundary)
-- [Installation](#installation)
-- [Prepare model weights](#prepare-model-weights)
-- [Prepare test data files](#prepare-test-data-files)
-- [Diagnostic Sub-Agent](#diagnostic-sub-agent)
-- [Survival Sub-Agent](#survival-sub-agent)
-- [Treatment Sub-Agent and LLM Orchestrator](#treatment-sub-agent-and-llm-orchestrator)
-- [Contracts](#contracts)
-- [Acknowledgement](#acknowledgement)
+Python and uses the official OpenAI Responses API for configured LLM handoffs
+and report synthesis. This software is for research use, is not a medical
+device, and must not be used for autonomous clinical decisions.
 
 ## Release boundary
 
-This repository contains source code, configuration templates, and one
-attributed public test case comprising 30 selected 2D MRI slices. It does not
-contain diagnostic labels for that case, extracted features, model
-checkpoints, API credentials, generated reports, prediction outputs, or
-comparison-model implementations. BrainVLM source and all project checkpoints
-are distributed separately.
+The release contains source, configuration templates, and an attributed,
+label-free test case with 30 selected 2D MRI slices. It does not contain model
+weights, extracted features, API credentials, generated reports, prediction
+outputs, or comparison-model implementations. No comparison code is included.
 
-The internal case database, local knowledge sources, physician-authored rules,
-private retrieval implementation, and derived records are not distributed.
-They are not required to inspect or test the public interfaces, but the public
-release cannot reproduce private-database retrieval or the report quality
-obtained with those unavailable sources.
-
-This software is for research use. It is not a medical device and must not be
-used to make autonomous diagnostic or treatment decisions.
+The private internal Treatment database is not distributed. Its schemas,
+physician-authored rules, retrieval implementation, credentials, and derived
+evidence are not released. Users may implement and inject an `EvidenceProvider` from a
+deployment-controlled location outside the Git checkout. The public code does
+not automatically discover a database or infer its format. Without the
+unreleased evidence and deployment logic, this release cannot reproduce
+private-database retrieval or the report quality obtained with those sources;
+it does not reproduce the internal treatment report quality.
 
 ## Installation
 
-Python 3.9 or newer is required. Install the complete public workflow with:
+Python 3.9 or newer is required. Install the complete public workflow or a
+single Sub-Agent dependency group:
 
 ```bash
 python -m pip install -e ".[all]"
+# Alternatives: .[diagnostic], .[survival], or .[treatment]
 ```
 
-The `diagnostic`, `survival`, and `treatment` extras can instead be installed
-separately.
+The compatible diagnostic constraints are in `pyproject.toml`. The exact
+historical package set used for checkpoint reference capture is in
+`requirements/diagnostic-reference.txt`. PyTorch CPU and CUDA wheels are
+platform-specific; select an official PyTorch distribution appropriate for the
+host instead of assuming one CUDA package index works everywhere.
 
-## Prepare model weights
+## Model assets
 
-The MidlineAgent Diagnostic Sub-Agent uses Llama 3.1-8B Instruct and BiomedCLIP
-foundations through the related BrainVLM project, together with the
-BrainVLM-Midline diagnostic model, tumor-conditioned WHO Grading, and
-AttentionMIL for patient-level aggregation. Download the required assets
-separately; model weights are not stored in this repository.
+Prepare Llama 3.1-8B Instruct and BiomedCLIP in the same roles used by the
+related BrainVLM work. Llama access is subject to Meta's license and model
+terms. BiomedCLIP access is subject to its model card and applicable terms.
+No additional project source repository is needed.
 
-| Model | Purpose | Download | Configuration |
-| --- | --- | --- | --- |
-| Llama 3.1-8B Instruct | Language-model backbone used by BrainVLM | [Hugging Face](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) | Configure in the external BrainVLM checkout as described by the [BrainVLM project](https://github.com/HKU-HealthAI/BrainVLM). |
-| BiomedCLIP | Vision encoder used by BrainVLM | [Hugging Face](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224) | Loaded by the external BrainVLM implementation. |
-| BrainVLM-Midline | Five-class slice inference for midline tumors | [Google Drive](https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link) | Set `TUMOR_CHECKPOINT` or pass `--checkpoint` to `midline-predict-tumor`. |
-| WHO Grading | Tumor-conditioned WHO-grade prediction | [Google Drive](https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link) | Set `WHO_CHECKPOINT` or pass `--checkpoint` to `midline-predict-who-grade`. |
-| MIL | Learnable-logits patient aggregation | [Google Drive](https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link) | Set `MIL_CHECKPOINT` or pass `--mil-checkpoint` to `midline-predict-tumor`. |
+| Asset | Role | Location |
+| --- | --- | --- |
+| Llama 3.1-8B Instruct | Language backbone | [Hugging Face model](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
+| BiomedCLIP | Vision encoder | [Hugging Face model](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224) |
+| BrainVLM-Midline | Five-class slice model | [Google Drive](https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link) |
+| WHO_Grading | Tumor-conditioned WHO model | [Google Drive](https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link) |
+| MIL | Patient-level logits aggregation | [Google Drive](https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link) |
 
-Access to Llama 3.1 and BiomedCLIP remains subject to their respective license
-and model-access terms. Clone the external source separately:
+Use a local Llama directory for `--llama-model`. The BiomedCLIP argument is
+optional: without it, the runtime resolves
+`hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224` through
+OpenCLIP; with it, pass an authorized local pretrained file or OpenCLIP
+identifier. See `docs/brainvlm-midline.md` for checkpoint hashes and the full
+asset contract.
 
-```bash
-git clone https://github.com/HKU-HealthAI/BrainVLM.git /path/to/BrainVLM
-```
+## Label-free BT0156 data
 
-The released checkpoint runtime receives this checkout through
-`--brainvlm-source`. It never copies the checkout or weights into MidlineAgent.
-The external environment must provide BrainVLM's own runtime dependencies,
-including `transformers`, `open_clip`, `peft`, and `omegaconf`.
+`test_data/utsw_glioma_bt0156/` contains 30 selected axial PNG slices from the
+UTSW-Glioma BT0156 subject: 7 T1, 8 T1CE, 7 T2, and 8 FLAIR. The files are
+modified derivatives attributed in the case-level `ATTRIBUTION.md` and at
+https://doi.org/10.7937/DFAE-1B86 under CC BY 4.0.
 
-## Prepare test data files
+`test_data/utsw_glioma_bt0156/annotations.json` is a label-free inference
+manifest. No diagnostic labels or results are bundled. The adjacent
+`tumor_label_definitions.json` records the five canonical tumor names and the
+historical checkpoint class descriptions, but it does not annotate BT0156.
 
-The related BrainVLM project supports volumetric `.nii.gz` and `.npy` inputs.
-This repository's checkpoint inference commands instead operate on preselected
-2D MRI slices and do not provide a 3D-to-2D conversion command.
-
-An attributed test case is included at `test_data/utsw_glioma_bt0156/`. It
-contains 30 selected axial PNG slices from subject BT0156 in the UTSW-Glioma
-collection: 7 T1, 8 T1CE, 7 T2, and 8 FLAIR slices. The source citation,
-modification notice, and CC BY 4.0 terms are recorded in the case-level
-`ATTRIBUTION.md` and at https://doi.org/10.7937/DFAE-1B86. The label-free input
-file is `test_data/utsw_glioma_bt0156/annotations.json`. No generated
-prediction is bundled. The adjacent `tumor_label_definitions.json` records the
-current WHO name and the original checkpoint class description for each model
-label without disclosing the case label. `tumor_2` is explicitly identified as
-a checkpoint superclass because it does not map one-to-one to a single WHO
-entity.
-
-For other cases, place de-identified PNG or JPEG slices beneath a caller-owned
-image root. The standalone inference reader supports the `T1`, `T1CE` (or
-`T1C`), `T2`, and `FLAIR` modality labels. Every inference record requires:
-
-- `patient_id`: an opaque patient identifier;
-- `image_path`: a relative path that remains beneath `--image-root`;
-- `modality`: one of the supported modality labels; and
-- `slice_index`: the integer slice position.
-
-An optional finite `age` value must be consistent across the patient. Labels
-such as `tumor_type` and `who_grade` are rejected by the standalone inference
-loader. Tumor prediction requires at least one slice from each of T1, T1CE,
-T2, and FLAIR so that the released MIL input can be aligned to five slices per
-modality.
-
-The case JSON passed through `--case-json` requires `case_id` and may contain
-`clinical_facts` and `mri_manifest`. The `case_id` must match a `patient_id` in
-the annotation file. It must contain 1-128 ASCII characters, begin with an
-alphanumeric character, and otherwise use only alphanumeric characters,
-underscores, periods, colons, or hyphens. When present, `clinical_facts` must be
-a JSON object and `mri_manifest` must be a JSON array of objects. Their values
-must be finite and JSON-compatible.
+Each inference record requires `patient_id`, a relative `image_path`, a
+supported `modality` (`T1`, `T1CE`/`T1C`, `T2`, or `FLAIR`), and a
+non-negative integer `slice_index`. A finite, patient-consistent `age` is
+optional. The inference loader rejects tumor and grade labels. The case file
+used by `midline-run` requires `case_id` and may contain `clinical_facts`
+and `mri_manifest`.
 
 ## Diagnostic Sub-Agent
 
-### Standalone released-checkpoint inference
-
-Set paths to the external dependencies and downloaded checkpoints. The
-BiomedCLIP override is optional when the BrainVLM checkout can resolve its
-configured pretrained asset itself.
+The following commands use caller-owned model paths and write all generated
+artifacts outside the repository:
 
 ```bash
 export ANNOTATIONS="$PWD/test_data/utsw_glioma_bt0156/annotations.json"
 export IMAGE_ROOT="$PWD/test_data/utsw_glioma_bt0156"
-export BRAINVLM_SOURCE=/path/to/BrainVLM
+export CASE_JSON="$PWD/test_data/utsw_glioma_bt0156/case.json"
 export LLAMA_MODEL=/path/to/Llama-3.1-8B-Instruct
 export BIOMEDCLIP_PRETRAINED=/path/to/biomedclip-pretrained.bin
 export TUMOR_CHECKPOINT=/path/to/brainvlm-midline.pth
 export MIL_CHECKPOINT=/path/to/mil.pth
 export WHO_CHECKPOINT=/path/to/who-grading.pth
 export DEVICE=cuda:0
-export OUTPUT_JSON=/path/to/run/tumor_prediction.json
+export RUN_ROOT=/path/to/caller-owned/run
+mkdir -p "$RUN_ROOT"
+```
 
+### Tumor prediction
+
+```bash
+midline-predict-tumor \
+  --annotations "$ANNOTATIONS" \
+  --image-root "$IMAGE_ROOT" \
+  --llama-model "$LLAMA_MODEL" \
+  --biomedclip-pretrained "$BIOMEDCLIP_PRETRAINED" \
+  --checkpoint "$TUMOR_CHECKPOINT" \
+  --mil-checkpoint "$MIL_CHECKPOINT" \
+  --device "$DEVICE" \
+  --output "$RUN_ROOT/tumor.json"
+```
+
+The result contains patient-level tumor logits and probabilities, canonical
+class names, modality counts, preprocessing metadata, and checkpoint SHA-256
+digests.
+
+The environment-variable launcher is equivalent:
+
+```bash
+export OUTPUT_JSON="$RUN_ROOT/tumor.json"
 bash scripts/run_tumor_prediction.sh
+```
 
-export TUMOR_RESULT="$OUTPUT_JSON"
-export OUTPUT_JSON=/path/to/run/who_grading.json
+For Slurm, also set `PROJECT_ROOT="$PWD"` and `RUN_DIR="$RUN_ROOT"`, then use
+`scripts/run_tumor_prediction.sbatch`. The paired WHO launcher is
+`scripts/run_who_grading.sbatch`.
+
+### WHO grading
+
+```bash
+midline-predict-who-grade \
+  --annotations "$ANNOTATIONS" \
+  --image-root "$IMAGE_ROOT" \
+  --llama-model "$LLAMA_MODEL" \
+  --biomedclip-pretrained "$BIOMEDCLIP_PRETRAINED" \
+  --checkpoint "$WHO_CHECKPOINT" \
+  --tumor-result "$RUN_ROOT/tumor.json" \
+  --device "$DEVICE" \
+  --output "$RUN_ROOT/who.json"
+```
+
+The command validates the tumor-result patient ID. For `tumor_1` and
+`tumor_3`, the public rule fixes WHO grade to `grade_4` without loading the
+WHO model. Other classes use strict tumor-matched slice voting and record
+rejected or invalid generations rather than silently relabelling them.
+
+The environment-variable launcher accepts `TUMOR_RESULT` (or an explicit
+`TUMOR_TYPE`):
+
+```bash
+export TUMOR_RESULT="$RUN_ROOT/tumor.json"
+export OUTPUT_JSON="$RUN_ROOT/who.json"
 bash scripts/run_who_grading.sh
 ```
 
-The first command writes patient-level tumor logits, probabilities, modality
-counts, preprocessing metadata, and checkpoint SHA-256 digests. The second
-command validates the patient ID in the tumor result before WHO inference. For
-`tumor_1` and `tumor_3`, WHO grade is fixed to `grade_4` by the public clinical
-rule and the model checkpoint is not loaded. Other tumor classes use strict
-tumor-matched slice voting; mismatched and invalid model generations are
-counted rather than silently relabelled.
+### Feature extraction and MIL training
 
-The reference labels for BT0156 are `tumor_4` (Astrocytoma, IDH-mutant; the
-checkpoint description is IDH-mutated astrocytoma) and `grade_3`. These values
-are provided only as verification targets.
-No generated prediction is bundled in the repository. Both standalone result
-files record `tumor_type`, the corresponding `tumor_name`, and the original
-`checkpoint_class_description`. Current entity names follow the WHO
-Classification of Tumours, 5th edition; the exact legacy checkpoint text is
-retained separately for reproducibility. See the official
-[IARC classification structure](https://whobluebooks.iarc.who.int/structures/central-nervous-system-tumours/).
-
-The same two stages can be submitted independently on Slurm. Create a
-caller-owned run directory first and pass its log path to `sbatch`; all other
-exported variables above are inherited.
-
-```bash
-export PROJECT_ROOT="$PWD"
-export RUN_DIR=/path/to/run
-mkdir -p "$RUN_DIR/logs"
-
-sbatch --output="$RUN_DIR/logs/tumor-%j.log" scripts/run_tumor_prediction.sbatch
-# Submit the WHO stage after the tumor job completes successfully.
-sbatch --output="$RUN_DIR/logs/who-%j.log" scripts/run_who_grading.sbatch
-```
-
-Use `midline-predict-tumor --help` and `midline-predict-who-grade --help` for
-the equivalent direct CLI arguments.
-
-### Generic adapter and training interfaces
-
-The BrainVLM-Midline integration accesses the external BrainVLM source through
-a narrow factory contract and never copies the external source or checkpoint
-into this repository. See `docs/external-brainvlm-adapter.md` for the required
-interface.
-
-Extract versioned slice features into a safetensors artifact and JSON sidecar:
+Extract label-free slice logits and 4096-dimensional hidden features:
 
 ```bash
 midline-extract-features \
-  --annotations ANNOTATIONS \
-  --image-root IMAGE_ROOT \
-  --source-root BRAINVLM_SOURCE \
-  --checkpoint BRAINVLM_CHECKPOINT \
-  --adapter PACKAGE.MODULE:FACTORY \
-  --output FEATURE_ARTIFACT
+  --annotations "$ANNOTATIONS" \
+  --image-root "$IMAGE_ROOT" \
+  --llama-model "$LLAMA_MODEL" \
+  --biomedclip-pretrained "$BIOMEDCLIP_PRETRAINED" \
+  --checkpoint "$TUMOR_CHECKPOINT" \
+  --device "$DEVICE" \
+  --output "$RUN_ROOT/bt0156-features.safetensors"
 ```
 
-Train AttentionMIL with explicit, disjoint patient-level train and validation
-split files:
+For caller-owned labelled cohorts, add `--labeled`. Train AttentionMIL with
+explicit, disjoint patient split files:
 
 ```bash
 midline-train-attention-mil \
-  --feature-file FEATURE_ARTIFACT \
-  --train-split TRAIN_SPLIT \
-  --validation-split VALIDATION_SPLIT \
-  --output ATTENTION_MIL_CHECKPOINT
+  --feature-file /path/to/labelled-features.safetensors \
+  --train-split /path/to/train-patients.json \
+  --validation-split /path/to/validation-patients.json \
+  --output /path/to/caller-owned/run/attention-mil.safetensors
 ```
 
-The production inference path requires an AttentionMIL checkpoint and does not
-silently replace it with mean aggregation. WHO-grade votes are conditioned on
-the patient-level tumor class, and rejected mismatched votes remain in
-provenance.
+### Focused BrainVLM-Midline training
 
-External BrainVLM training can be launched with `scripts/train_brainvlm.sh`.
-The caller must supply `BRAINVLM_SOURCE_ROOT`, `BRAINVLM_CHECKPOINT`,
-`BRAINVLM_TRAIN_SCRIPT`, and `BRAINVLM_TRAIN_CONFIG`.
+Copy either path-free configuration template, replace every caller-owned data,
+asset, and output placeholder, then launch the matching task:
 
-## Survival Sub-Agent
+```bash
+midline-train-brainvlm \
+  --task tumor \
+  --config /path/to/caller-owned/brainvlm-tumor.yaml
 
-The Survival Sub-Agent is implemented in `midline_agent/survival`. It pools
-patient-level BrainVLM hidden features using either all valid slices or T1CE
-keyframes, compresses the 4096-dimensional representation with a regularized
-autoencoder, estimates risk and survival functions with a random survival
-forest, and calibrates median overall survival with an accelerated failure time
-model.
+midline-train-brainvlm \
+  --task who \
+  --config /path/to/caller-owned/brainvlm-who.yaml
+```
 
-`MidlineOrchestrator` accepts a configured `survival_workflow` callable or
-object with a `run` method. The workflow receives the case input and validated
-diagnostic result and returns a `SurvivalResult` containing a finite risk score,
-positive median survival time, and a non-increasing survival curve. The result
-is validated before it is supplied to the Treatment Sub-Agent or persisted in
-the privacy-minimized trace. Fitted model checkpoints remain external to this
-repository and must be supplied by the deployment.
+The templates are `configs/brainvlm_tumor.example.yaml` and
+`configs/brainvlm_who.example.yaml`. Training requires indexed CUDA and writes
+an inference-compatible `checkpoint_last.pth` beneath the configured output
+directory.
 
-## Treatment Sub-Agent and LLM Orchestrator
+### Integrated diagnostic workflow
 
-Set `OPENAI_API_KEY` and `OPENAI_MODEL` for the official OpenAI service. Custom
-API endpoints are not supported. Run the integrated workflow with:
+`midline-run` executes the shipped tumor and WHO services through the same
+Diagnostic workflow used by the orchestrator and writes a privacy-minimized
+trace:
 
 ```bash
 midline-run \
-  --case-json CASE_INPUT \
-  --annotations ANNOTATIONS \
-  --image-root IMAGE_ROOT \
-  --source-root BRAINVLM_SOURCE \
-  --checkpoint BRAINVLM_CHECKPOINT \
-  --adapter PACKAGE.MODULE:FACTORY \
-  --attention-mil-checkpoint ATTENTION_MIL_CHECKPOINT \
-  --output CASE_TRACE
+  --case-json "$CASE_JSON" \
+  --annotations "$ANNOTATIONS" \
+  --image-root "$IMAGE_ROOT" \
+  --llama-model "$LLAMA_MODEL" \
+  --biomedclip-pretrained "$BIOMEDCLIP_PRETRAINED" \
+  --tumor-checkpoint "$TUMOR_CHECKPOINT" \
+  --mil-checkpoint "$MIL_CHECKPOINT" \
+  --who-checkpoint "$WHO_CHECKPOINT" \
+  --device "$DEVICE" \
+  --output "$RUN_ROOT/case-trace.json"
 ```
 
-The LLM Orchestrator executes each configured Sub-Agent in order and does not
-silently replace failed predictions. If a runtime model or checkpoint is not
-configured, that step is recorded as unavailable. The Treatment Sub-Agent
-accepts only injected evidence providers. No guideline corpus, case database,
-or web cache is bundled. The optional OpenAI web-search provider uses the same
-official Responses client. Reports validate source IDs against collected
-evidence before rendering.
+If a Survival workflow or Treatment client is not injected, its step is
+recorded as unavailable. The command never substitutes a different predictor.
 
-Private treatment evidence is not distributed with this repository. Keep any
-internal case database, local knowledge base, and physician-authored rules
-outside the Git checkout in a deployment-controlled location, such as
-`/secure/midlineagent/treatment_evidence/`. The example path is illustrative;
-access control, encryption, retention, and privacy review remain deployment
-responsibilities.
+## Survival Sub-Agent
 
-Deployment-owned code must implement the `EvidenceProvider` protocol, return a
+The public Survival implementation is in `midline_agent.survival`. It exposes
+feature aggregation, regularized autoencoder compression, random survival
+forest fitting/prediction, and accelerated failure-time calibration. Fitted
+models and patient-level training data are caller-owned and remain outside the
+repository.
+
+There is no public Survival command that guesses a deployment's data schema or
+fitted-model locations. Construct a callable or object with a `run` method and
+inject it as `MidlineOrchestrator(survival_workflow=workflow)`. The callable
+receives the validated case and Diagnostic result and returns a
+`midline_agent.schema.SurvivalResult`. See `docs/survival-agent.md` for the
+public API boundary.
+
+## Treatment Sub-Agent
+
+Set only `OPENAI_API_KEY` and `OPENAI_MODEL` when using the official OpenAI
+service. Custom API endpoints are not supported. `OpenAiResponsesClient` uses
+the official OpenAI Responses API with structured output, bounded retries,
+request timeout, and `store=false`.
+
+The public Treatment boundary contains no private internal database or
+evidence. Deployment-owned code implements `EvidenceProvider`, returns a
 bounded tuple of `EvidenceItem` values with non-identifying opaque source IDs,
-and inject the provider through
-`MidlineOrchestrator(treatment_providers=(provider,))`. The public
-`midline-run` command does not automatically discover or load a private
-database, and the repository does not define or infer a private database
-format. See `docs/treatment-providers.md` for the complete trust, persistence,
-and privacy boundary.
+and injects it through
+`MidlineOrchestrator(treatment_providers=(provider,))`. The public command
+does not automatically load private evidence. See `docs/treatment-providers.md` for
+the trust, privacy, persistence, and report-validation contracts.
 
-Persisted traces hash the case identifier and omit MRI paths, raw clinical
-text, evidence excerpts, and URLs. Deployments remain responsible for local
-privacy review and retention controls.
+## Documentation
 
-## Contracts
+- `docs/brainvlm-midline.md`: model, assets, annotations, features, and training.
+- `docs/data-schema.md`: shared annotations, artifacts, split files, and traces.
+- `docs/survival-agent.md`: Survival workflow API.
+- `docs/treatment-providers.md`: deployment-injected evidence providers.
+- `docs/provenance/brainvlm-midline-sources.md`: source derivation inventory.
+- `THIRD_PARTY_NOTICES.md`: data, source-work, library, and model attribution.
 
-- `docs/data-schema.md` defines annotations, split files, artifacts, and traces.
-- `docs/external-brainvlm-adapter.md` defines the external model boundary.
-- `docs/survival-agent.md` defines the Survival workflow contract.
-- `docs/treatment-providers.md` defines evidence-provider requirements.
-- `THIRD_PARTY_NOTICES.md` records the external dependency boundary.
+## Acknowledgements
 
-## Acknowledgement
-
-The related [BrainVLM](https://github.com/HKU-HealthAI/BrainVLM) project builds
-on [MiniGPT-4](https://github.com/Vision-CAIR/MiniGPT-4) and uses
-[Llama 3.1-8B Instruct](#prepare-model-weights) and
-[BiomedCLIP](#prepare-model-weights).
-MidlineAgent integrates BrainVLM through the external adapter boundary defined
-in this repository. Orchestration and treatment-report synthesis use the
-official OpenAI Python SDK and
-[OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses).
-We thank the developers and maintainers of these projects and resources.
+The internal BrainVLM-Midline implementation derives task behavior and
+checkpoint compatibility from related BrainVLM and MiniGPT-4 work. MiniGPT-4
+builds on LAVIS. The runtime uses the installed Transformers, PEFT, OpenCLIP,
+and BiomedCLIP ecosystems, and Llama 3.1-8B Instruct subject to its license and
+model-access terms. Orchestration uses the official OpenAI Python SDK. See
+`THIRD_PARTY_NOTICES.md` and `licenses/` for the precise notices and license
+texts. These acknowledgements do not imply a dependency on another project
+source tree at runtime.

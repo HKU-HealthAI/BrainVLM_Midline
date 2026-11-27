@@ -506,33 +506,33 @@ git commit -m "refactor: share diagnostic checkpoint services in orchestrator"
 - Delete: `docs/superpowers/specs/2026-11-27-checkpoint-inference-design.md`
 - Delete: `docs/superpowers/plans/2026-11-27-checkpoint-inference.md`
 
-- [ ] **Step 1: Reconcile the pre-copy source provenance inventory**
+- [x] **Step 1: Reconcile the pre-copy source provenance inventory**
 
 Verify the Task 2 pre-copy inventory now matches every final derived release file. Record final release digests and any additional local source digest, identifiable upstream repository and immutable revision, modifications, holder, and license. When local Git lineage is unavailable, state that fact and retain the immutable local digest instead of inventing a revision. Remove any code whose ownership or compatible license still cannot be established.
 
-- [ ] **Step 2: Add dependency-contract tests**
+- [x] **Step 2: Add dependency-contract tests**
 
 Extend CLI and release tests to assert the diagnostic extra includes compatible Transformers, PEFT, OpenCLIP, OmegaConf, einops, Pillow, NumPy, safetensors, PyTorch, and torchvision constraints. Assert the exact reference versions are recorded separately and CUDA wheel selection is documented as platform-specific.
 
-- [ ] **Step 3: Update README from the MidlineAgent perspective**
+- [x] **Step 3: Update README from the MidlineAgent perspective**
 
 Explain BrainVLM-Midline as an internally implemented Diagnostic Sub-Agent model derived from related work. Keep the supplied Google Drive checkpoint links, Llama and BiomedCLIP preparation, BT0156 commands, feature extraction, training, Survival, Treatment private-evidence boundary, official OpenAI-only API use, and acknowledgements. Remove all instructions to clone another source repository.
 
-- [ ] **Step 4: Add complete notices and runtime documentation**
+- [x] **Step 4: Add complete notices and runtime documentation**
 
 Document annotation fields, model assets, training scope, checkpoint hashes, feature schema, supported commands, and intentional exclusions. Include full license texts and precise attribution without presenting unrelated comparison implementations.
 
-- [ ] **Step 5: Remove obsolete external-boundary documents**
+- [x] **Step 5: Remove obsolete external-boundary documents**
 
 Delete the old external adapter and external-checkout checkpoint plan/spec after their replacements exist. The approved self-contained design and this implementation plan remain as historical engineering documents.
 
-- [ ] **Step 6: Run documentation and packaging tests**
+- [x] **Step 6: Run documentation and packaging tests**
 
 Run: `pytest -q tests/test_cli_entrypoints.py tests/test_release_audit.py`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit documentation and provenance**
+- [x] **Step 7: Commit documentation and provenance**
 
 ```bash
 git add -A README.md pyproject.toml requirements docs licenses THIRD_PARTY_NOTICES.md .env.example tests

@@ -14,9 +14,8 @@ It does not publish an internal case database, local knowledge corpus, physician
 rules, database schema, connection details, cached search results, or generated
 reports.
 
-Private evidence must remain outside the Git checkout in a deployment-controlled
-directory, for example `/secure/midlineagent/treatment_evidence/`. This path is
-illustrative rather than a required filesystem layout. Access control,
+Private evidence must remain outside the Git checkout in a caller-owned,
+deployment-controlled location. No filesystem layout is implied. Access control,
 encryption, retention, backups, and privacy review remain deployment
 responsibilities.
 

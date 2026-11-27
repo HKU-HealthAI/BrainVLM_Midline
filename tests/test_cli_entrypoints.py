@@ -395,25 +395,31 @@ def test_readme_documents_reproducible_checkpoint_inference() -> None:
     readme = (root / "README.md").read_text(encoding="ascii")
 
     required = (
-        "https://github.com/HKU-HealthAI/BrainVLM",
-        "168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD",
-        "1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL",
-        "15fch44MAuqOE4g4vuPegwAaFZn2EDk-M",
+        "https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link",
+        "https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link",
+        "https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link",
         "Llama 3.1-8B Instruct",
         "BiomedCLIP",
         "test_data/utsw_glioma_bt0156/annotations.json",
+        "midline-predict-tumor",
+        "midline-predict-who-grade",
+        "midline-extract-features",
+        "midline-train-brainvlm",
+        "midline-run",
         "scripts/run_tumor_prediction.sh",
         "scripts/run_who_grading.sh",
         "scripts/run_tumor_prediction.sbatch",
         "scripts/run_who_grading.sbatch",
-        "tumor_4",
-        "grade_3",
-        "No generated prediction is bundled",
+        "modified training and inference source",
+        "does not call another source checkout",
+        "No diagnostic labels or results are bundled",
         "https://doi.org/10.7937/DFAE-1B86",
     )
 
     assert all(item in readme for item in required)
     assert "Python 3.9 or newer" in readme
+    assert "git clone" not in readme
+    assert "The reference labels for BT0156" not in readme
     assert "The public CLI does not expose a separate WHO-checkpoint argument" not in readme
     assert "no patient data or example cases are bundled" not in readme
 
