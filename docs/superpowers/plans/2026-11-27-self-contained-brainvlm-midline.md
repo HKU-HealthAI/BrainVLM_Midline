@@ -358,7 +358,7 @@ Add `midline-train-brainvlm = "scripts.train_brainvlm_midline:main"`. Accept `--
 Implement `tests/diagnostic/ddp_smoke.py` as a small executable using injected foundation stubs, a two-record dataset, the `gloo` backend, and the public training entry point. Each rank writes an atomic rank marker to a temporary directory; only rank zero may write the checkpoint. Run:
 
 ```bash
-torchrun --standalone --nnodes=1 --nproc-per-node=2 tests/diagnostic/ddp_smoke.py --output /tmp/midlineagent-ddp-smoke
+torchrun --standalone --nnodes=1 --nproc-per-node=2 --module tests.diagnostic.ddp_smoke --output /tmp/midlineagent-ddp-smoke
 ```
 
 Expected: exit code 0, two rank markers, one checkpoint, one optimizer step per rank, identical reduced loss, and no non-zero-rank checkpoint.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import tempfile
 from collections.abc import Iterable, Mapping
 from contextlib import nullcontext
@@ -31,16 +32,26 @@ _REQUIRED_CONFIG_FIELDS = {
     "batch_size",
     "learning_rate",
     "min_learning_rate",
+    "warmup_learning_rate",
     "weight_decay",
     "warmup_steps",
+    "iterations_per_epoch",
     "gradient_accumulation_steps",
     "seed",
     "num_workers",
     "use_age",
     "upsample_ratio",
     "amp",
+    "device",
 }
-_OPTIONAL_CONFIG_FIELDS = {"resume", "initialization_checkpoint"}
+_OPTIONAL_CONFIG_FIELDS = {
+    "resume",
+    "initialization_checkpoint",
+    "distributed",
+    "world_size",
+    "dist_url",
+}
+_CUDA_DEVICE_PATTERN = re.compile(r"cuda:(0|[1-9][0-9]*)")
 
 
 class TrainingContractError(ValueError):
@@ -86,16 +97,22 @@ class BrainVlmTrainingConfig:
     batch_size: int
     learning_rate: float
     min_learning_rate: float
+    warmup_learning_rate: float
     weight_decay: float
     warmup_steps: int
+    iterations_per_epoch: int
     gradient_accumulation_steps: int
     seed: int
     num_workers: int
     use_age: bool
     upsample_ratio: float
     amp: bool
+    device: str
     resume: Path | None = None
     initialization_checkpoint: Path | None = None
+    distributed: bool = False
+    world_size: int | None = None
+    dist_url: str | None = None
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "BrainVlmTrainingConfig":
@@ -130,12 +147,57 @@ class BrainVlmTrainingConfig:
         upsample = _finite_number(mapping, "upsample_ratio", minimum=0.0, strict=False)
         if upsample > 1:
             raise TrainingContractError("upsample ratio must be at most 1")
+        device = mapping["device"]
+        if not isinstance(device, str) or _CUDA_DEVICE_PATTERN.fullmatch(device) is None:
+            raise TrainingContractError("device must use the indexed cuda:N format")
+        learning_rate = _finite_number(mapping, "learning_rate", minimum=0.0, strict=True)
+        minimum_learning_rate = _finite_number(
+            mapping, "min_learning_rate", minimum=0.0, strict=False
+        )
+        warmup_learning_rate = _finite_number(
+            mapping, "warmup_learning_rate", minimum=0.0, strict=False
+        )
+        if minimum_learning_rate > learning_rate:
+            raise TrainingContractError("minimum learning rate exceeds learning rate")
+        if warmup_learning_rate > learning_rate:
+            raise TrainingContractError("warmup learning rate exceeds learning rate")
+        epochs = _positive_int(mapping, "epochs")
+        iterations_per_epoch = _positive_int(mapping, "iterations_per_epoch")
+        accumulation_steps = _positive_int(mapping, "gradient_accumulation_steps")
+        warmup_steps = _positive_int(mapping, "warmup_steps", allow_zero=True)
+        total_steps = epochs * math.ceil(iterations_per_epoch / accumulation_steps)
+        if warmup_steps > total_steps:
+            raise TrainingContractError("warmup steps exceed total optimizer steps")
         optional_paths: dict[str, Path | None] = {}
-        for name in _OPTIONAL_CONFIG_FIELDS:
+        for name in ("resume", "initialization_checkpoint"):
             value = mapping.get(name)
             if value is not None and (not isinstance(value, str) or not value):
                 raise TrainingContractError(f"{name.replace('_', ' ')} must be a path string")
             optional_paths[name] = None if value is None else Path(value)
+        if optional_paths["resume"] is not None and optional_paths["initialization_checkpoint"] is not None:
+            raise TrainingContractError(
+                "resume and initialization checkpoint are mutually exclusive"
+            )
+        distributed = mapping.get("distributed", False)
+        if type(distributed) is not bool:
+            raise TrainingContractError("distributed must be a boolean")
+        world_size = mapping.get("world_size")
+        dist_url = mapping.get("dist_url")
+        if world_size is not None and (type(world_size) is not int or world_size <= 0):
+            raise TrainingContractError("world size must be a positive integer")
+        if dist_url is not None and not isinstance(dist_url, str):
+            raise TrainingContractError("dist url must be a string")
+        if distributed:
+            if world_size is None:
+                raise TrainingContractError("world size is required for distributed training")
+            if dist_url is None:
+                raise TrainingContractError("dist url is required for distributed training")
+            if dist_url != "env://":
+                raise TrainingContractError("dist url must be env://")
+        elif world_size is not None or dist_url is not None:
+            raise TrainingContractError(
+                "distributed must be true when distributed settings are supplied"
+            )
         return cls(
             task=task,
             annotations=tuple(Path(item) for item in annotations),
@@ -143,20 +205,26 @@ class BrainVlmTrainingConfig:
             llama_model=Path(mapping["llama_model"]),
             biomedclip_pretrained=biomedclip,
             output_dir=Path(mapping["output_dir"]),
-            epochs=_positive_int(mapping, "epochs"),
+            epochs=epochs,
             batch_size=_positive_int(mapping, "batch_size"),
-            learning_rate=_finite_number(mapping, "learning_rate", minimum=0.0, strict=True),
-            min_learning_rate=_finite_number(mapping, "min_learning_rate", minimum=0.0, strict=False),
+            learning_rate=learning_rate,
+            min_learning_rate=minimum_learning_rate,
+            warmup_learning_rate=warmup_learning_rate,
             weight_decay=_finite_number(mapping, "weight_decay", minimum=0.0, strict=False),
-            warmup_steps=_positive_int(mapping, "warmup_steps", allow_zero=True),
-            gradient_accumulation_steps=_positive_int(mapping, "gradient_accumulation_steps"),
+            warmup_steps=warmup_steps,
+            iterations_per_epoch=iterations_per_epoch,
+            gradient_accumulation_steps=accumulation_steps,
             seed=seed,
             num_workers=_positive_int(mapping, "num_workers", allow_zero=True),
             use_age=mapping["use_age"],
             upsample_ratio=upsample,
             amp=mapping["amp"],
+            device=device,
             resume=optional_paths["resume"],
             initialization_checkpoint=optional_paths["initialization_checkpoint"],
+            distributed=distributed,
+            world_size=world_size,
+            dist_url=dist_url,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -171,18 +239,24 @@ class BrainVlmTrainingConfig:
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
             "min_learning_rate": self.min_learning_rate,
+            "warmup_learning_rate": self.warmup_learning_rate,
             "weight_decay": self.weight_decay,
             "warmup_steps": self.warmup_steps,
+            "iterations_per_epoch": self.iterations_per_epoch,
             "gradient_accumulation_steps": self.gradient_accumulation_steps,
             "seed": self.seed,
             "num_workers": self.num_workers,
             "use_age": self.use_age,
             "upsample_ratio": self.upsample_ratio,
             "amp": self.amp,
+            "device": self.device,
             "resume": None if self.resume is None else str(self.resume),
             "initialization_checkpoint": (
                 None if self.initialization_checkpoint is None else str(self.initialization_checkpoint)
             ),
+            "distributed": self.distributed,
+            "world_size": self.world_size,
+            "dist_url": self.dist_url,
         }
 
 
@@ -245,6 +319,7 @@ class WarmupCosineScheduler:
         warmup_steps: int,
         total_steps: int,
         minimum_learning_rate: float,
+        warmup_learning_rate: float,
     ) -> None:
         if warmup_steps < 0 or total_steps <= 0 or warmup_steps > total_steps:
             raise TrainingContractError("scheduler step counts are invalid")
@@ -252,20 +327,29 @@ class WarmupCosineScheduler:
         self.warmup_steps = warmup_steps
         self.total_steps = total_steps
         self.minimum_learning_rate = float(minimum_learning_rate)
+        self.warmup_learning_rate = float(warmup_learning_rate)
         self.base_learning_rates = tuple(group["lr"] for group in optimizer.param_groups)
-        if any(self.minimum_learning_rate > value for value in self.base_learning_rates):
-            raise TrainingContractError("minimum learning rate exceeds the base learning rate")
+        if self.minimum_learning_rate < 0 or self.warmup_learning_rate < 0:
+            raise TrainingContractError("scheduler learning rates must be non-negative")
+        if any(
+            max(self.minimum_learning_rate, self.warmup_learning_rate) > value
+            for value in self.base_learning_rates
+        ):
+            raise TrainingContractError("scheduler learning rate exceeds the base learning rate")
         self.completed_steps = 0
 
     def step(self) -> float:
-        self.completed_steps += 1
-        step = min(self.completed_steps, self.total_steps)
-        if self.warmup_steps and step <= self.warmup_steps:
-            fraction = step / self.warmup_steps
-            values = [base * fraction for base in self.base_learning_rates]
+        step = min(self.completed_steps, self.total_steps - 1)
+        if self.warmup_steps and step < self.warmup_steps:
+            fraction = step / max(1, self.warmup_steps - 1)
+            values = [
+                self.warmup_learning_rate
+                + (base - self.warmup_learning_rate) * fraction
+                for base in self.base_learning_rates
+            ]
         else:
             span = max(1, self.total_steps - self.warmup_steps - 1)
-            progress = min(1.0, (step - self.warmup_steps - 1) / span)
+            progress = min(1.0, (step - self.warmup_steps) / span)
             cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
             values = [
                 self.minimum_learning_rate + (base - self.minimum_learning_rate) * cosine
@@ -273,7 +357,13 @@ class WarmupCosineScheduler:
             ]
         for group, value in zip(self.optimizer.param_groups, values):
             group["lr"] = value
+        self.completed_steps += 1
         return values[0]
+
+    def restore(self, completed_steps: int) -> None:
+        if type(completed_steps) is not int or not 0 <= completed_steps <= self.total_steps:
+            raise TrainingContractError("scheduler progress is out of bounds")
+        self.completed_steps = completed_steps
 
 
 @dataclass(frozen=True)
@@ -298,17 +388,24 @@ def train_epoch(
     *,
     scaler: Any,
     gradient_accumulation_steps: int,
+    max_iterations: int | None = None,
     device: torch.device,
     amp: bool,
 ) -> EpochResult:
     if gradient_accumulation_steps <= 0:
         raise TrainingContractError("gradient accumulation steps must be positive")
+    if max_iterations is not None and (
+        type(max_iterations) is not int or max_iterations <= 0
+    ):
+        raise TrainingContractError("maximum iterations must be a positive integer")
     model.train()
     optimizer.zero_grad(set_to_none=True)
     losses: list[float] = []
     optimizer_steps = 0
     pending = 0
     for index, raw_batch in enumerate(batches):
+        if max_iterations is not None and index >= max_iterations:
+            break
         batch = _to_device(dict(raw_batch), device)
         context = (
             torch.autocast(device_type="cuda", dtype=torch.float16)
@@ -360,11 +457,24 @@ def _training_state(
     manifest: Mapping[str, tuple[int, ...]],
 ) -> dict[str, torch.Tensor]:
     state = model.state_dict()
-    if set(manifest) - set(state):
-        raise TrainingContractError("model does not expose the complete trainable manifest")
     values: dict[str, torch.Tensor] = {}
+    selected: set[str] = set()
     for name, shape in manifest.items():
-        tensor = state[name]
+        candidates = [name]
+        for marker in (".lora_A.weight", ".lora_B.weight"):
+            if marker in name:
+                candidates.append(
+                    name.replace(marker, marker.replace(".weight", ".default.weight"))
+                )
+        matches = [candidate for candidate in candidates if candidate in state]
+        if not matches:
+            raise TrainingContractError(
+                "model does not expose the complete trainable manifest"
+            )
+        if len(matches) != 1 or matches[0] in selected:
+            raise TrainingContractError("trainable state key normalization collision")
+        selected.add(matches[0])
+        tensor = state[matches[0]]
         if tuple(tensor.shape) != tuple(shape):
             raise TrainingContractError(f"trainable tensor {name} has an incompatible shape")
         values[name] = tensor.detach().cpu().contiguous()
@@ -426,6 +536,7 @@ def load_training_checkpoint(
     optimizer: torch.optim.Optimizer,
     *,
     scaler: Any,
+    scheduler: WarmupCosineScheduler | None = None,
     manifest: Mapping[str, tuple[int, ...]],
 ) -> ResumeState:
     try:
@@ -459,6 +570,8 @@ def load_training_checkpoint(
         raise TrainingContractError("resume checkpoint state is incompatible") from exc
     if not isinstance(envelope["config"], Mapping):
         raise TrainingContractError("resume checkpoint config is invalid")
+    if scheduler is not None:
+        scheduler.restore(envelope["global_step"])
     return ResumeState(
         start_epoch=envelope["epoch"] + 1,
         global_step=envelope["global_step"],

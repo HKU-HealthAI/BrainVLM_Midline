@@ -83,8 +83,8 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_runtime.py` | `93577ef1a5e71ba84ce820d3c738af103a7526973f460efc4fc7c6dcfef4e28e` | Internal model runtime replacing source-checkout loading; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/datasets.py` | `5240a6865f36747225cb458082a35ec502441ad0b388bd3dc29c17fac627a8a2` | Clean behavioral reimplementation of tumor and WHO dataset contracts; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/collate.py` | `3fafddb8b3a9a74dec005bd73e37d3bed2b734e1602dd94f87ff9afb8da0e974` | New strict task collator; MIT |
-| `midline_agent/diagnostic/brainvlm_midline/training.py` | `64bf4b6fe416a51db382694795253560d47bfd0c569b95b16e7f977fe9c3f0a1` | Clean focused training implementation; MIT |
-| `scripts/train_brainvlm_midline.py` | `bd8a0770cdbe8da26b361b224ca331a542b06953281025531e75fc72173d1942` | New focused training command; MIT |
+| `midline_agent/diagnostic/brainvlm_midline/training.py` | `88b65ff70668d84f3f3cf6e5060d0fd1f68496e63e1fdef89913975c99069aa7` | Clean focused training implementation; MIT |
+| `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
 
 ## License Files
 

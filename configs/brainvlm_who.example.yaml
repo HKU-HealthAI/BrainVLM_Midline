@@ -9,12 +9,16 @@ epochs: 5
 batch_size: 8
 learning_rate: 0.0001
 min_learning_rate: 0.000001
+warmup_learning_rate: 0.000001
 weight_decay: 0.05
 warmup_steps: 200
+iterations_per_epoch: 1000
 gradient_accumulation_steps: 1
 seed: 42
 num_workers: 4
 use_age: true
 upsample_ratio: 0.7
 amp: true
+device: cuda:0
+distributed: false
 initialization_checkpoint: /path/to/BrainVLM-Midline-checkpoint.pth
