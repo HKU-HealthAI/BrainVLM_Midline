@@ -1,144 +1,152 @@
-"""Connect canonical MRI slices, external adapters, features, and diagnosis."""
+"""Compose standalone checkpoint services into the Diagnostic workflow."""
 
 from __future__ import annotations
 
-from collections import defaultdict
+import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Mapping
 
-import numpy as np
-import torch
-from PIL import Image
-
-from ..datasets.annotations import AnnotationRecord, MODALITIES
+from ..datasets.inference_annotations import InferenceCase
 from ..schema import CaseInput, DiagnosticResult, StepStatus
-from .adapters import DiagnosticModelAdapter, WhoGradeRequest
-from .attention_mil import MilOutput
-from .who_grade import vote_who_grade_for_tumor
+from .standalone import (
+    TumorPredictionResult,
+    TumorPredictionService,
+    WhoGradePredictionResult,
+    WhoGradePredictionService,
+)
 
 
-TUMOR_TYPES = ("tumor_1", "tumor_2", "tumor_3", "tumor_4", "tumor_5")
-MODALITY_MAP = {name: index for index, name in enumerate(MODALITIES)}
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_VERSION_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 
 
-class PatientMilPredictor(Protocol):
-    def predict_patient(self, patient: Mapping, feature_metadata: Mapping) -> MilOutput: ...
+def _checkpoint_digest(value: object, label: str) -> str:
+    if not isinstance(value, str) or _SHA256_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} checkpoint digest is invalid")
+    return value
+
+
+def _count(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _validated_modality_counts(value: Mapping[str, int]) -> dict[str, int]:
+    allowed = ("T1", "T1CE", "T2", "FLAIR")
+    if set(value) != set(allowed):
+        raise ValueError("tumor modality counts must cover the canonical modalities")
+    return {name: _count(value[name], f"{name} count") for name in allowed}
+
+
+def _validated_vote_counts(value: Mapping[str, int]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for grade, count in value.items():
+        if grade not in {"grade_2", "grade_3", "grade_4"}:
+            raise ValueError("WHO vote counts contain an invalid grade")
+        counts[grade] = _count(count, f"{grade} vote count")
+    return counts
+
+
+def _preprocessing_version(
+    tumor: TumorPredictionResult,
+    who: WhoGradePredictionResult,
+) -> str | None:
+    versions = {
+        value
+        for value in (
+            tumor.preprocessing.get("preprocessing_version"),
+            who.preprocessing.get("preprocessing_version"),
+        )
+        if value is not None
+    }
+    if not versions:
+        return None
+    if len(versions) != 1:
+        raise ValueError("diagnostic preprocessing versions do not match")
+    version = next(iter(versions))
+    if not isinstance(version, str) or _VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError("diagnostic preprocessing version is invalid")
+    return version
+
+
+def _diagnostic_provenance(
+    tumor: TumorPredictionResult,
+    who: WhoGradePredictionResult,
+) -> dict[str, object]:
+    checkpoint_keys = set(tumor.checkpoint_sha256)
+    if checkpoint_keys != {"brainvlm_midline", "mil"}:
+        raise ValueError("tumor checkpoint digests are incomplete")
+    checkpoint_sha256 = {
+        "tumor_model": _checkpoint_digest(
+            tumor.checkpoint_sha256["brainvlm_midline"],
+            "tumor model",
+        ),
+        "mil": _checkpoint_digest(tumor.checkpoint_sha256["mil"], "MIL"),
+    }
+    if who.checkpoint_sha256 is not None:
+        checkpoint_sha256["who_model"] = _checkpoint_digest(
+            who.checkpoint_sha256,
+            "WHO model",
+        )
+    if who.method not in {"fixed_rule", "model_vote"}:
+        raise ValueError("WHO method is invalid")
+    if who.method == "model_vote" and who.checkpoint_sha256 is None:
+        raise ValueError("model-voted WHO result requires a checkpoint digest")
+
+    provenance: dict[str, object] = {
+        "checkpoint_sha256": checkpoint_sha256,
+        "tumor_slice_count": _count(tumor.slice_count, "tumor slice count"),
+        "aligned_slice_count": _count(
+            tumor.aligned_slice_count,
+            "aligned tumor slice count",
+        ),
+        "modality_counts": _validated_modality_counts(tumor.modality_counts),
+        "who_method": who.method,
+        "who_slice_count": _count(who.slice_count, "WHO slice count"),
+        "vote_counts": _validated_vote_counts(who.vote_counts),
+        "rejected_vote_count": _count(
+            who.rejected_vote_count,
+            "rejected WHO vote count",
+        ),
+        "invalid_vote_count": _count(
+            who.invalid_vote_count,
+            "invalid WHO vote count",
+        ),
+    }
+    version = _preprocessing_version(tumor, who)
+    if version is not None:
+        provenance["preprocessing_version"] = version
+    return provenance
 
 
 @dataclass(frozen=True)
-class BrainVlmAttentionMilWorkflow:
-    """Execute BrainVLM slice inference followed by patient-level AttentionMIL."""
+class DiagnosticWorkflow:
+    """Run tumor prediction first, then tumor-conditioned WHO grading."""
 
-    records: tuple[AnnotationRecord, ...]
-    adapter: DiagnosticModelAdapter
-    predictor: PatientMilPredictor
+    inference_case: InferenceCase
+    tumor_service: TumorPredictionService
+    who_grade_service: WhoGradePredictionService
 
     def run(self, case_input: CaseInput) -> DiagnosticResult:
-        store = build_feature_store(list(self.records), self.adapter)
-        return diagnose_patient(store, case_input.case_id, self.predictor)
-
-
-def _load_image(path: Path | str) -> np.ndarray:
-    path = Path(path)
-    if path.suffix.lower() == ".npy":
-        image = np.load(path)
-    else:
-        image = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
-    image = np.asarray(image, dtype=np.float32)
-    if image.ndim == 2:
-        image = np.repeat(image[None, ...], 3, axis=0)
-    elif image.ndim == 3 and image.shape[-1] == 3:
-        image = image.transpose(2, 0, 1)
-    if image.shape[0] != 3:
-        raise ValueError(f"expected 2D or RGB image, got shape {image.shape}")
-    return image
-
-
-def build_feature_store(records: list[AnnotationRecord], adapter: DiagnosticModelAdapter) -> dict:
-    grouped: dict[str, list[AnnotationRecord]] = defaultdict(list)
-    for record in records:
-        grouped[record.patient_id].append(record)
-    patients = {}
-    for patient_id, patient_records in grouped.items():
-        labels = [record.tumor_type for record in patient_records]
-        if any(label not in TUMOR_TYPES for label in labels):
-            raise ValueError(f"patient {patient_id} has an invalid tumor label")
-        if len(set(labels)) != 1:
-            raise ValueError(f"patient {patient_id} has inconsistent tumor labels")
-        ordered = sorted(patient_records, key=lambda item: (MODALITY_MAP[item.modality], item.slice_index))
-        logits, generations, slice_metadata = [], [], []
-        prompt_versions: set[str] = set()
-        for record in ordered:
-            result = adapter.predict_who_grade(WhoGradeRequest(slice_id=f"{patient_id}:{record.modality}:{record.slice_index}", image=_load_image(record.image_path)))
-            prompt_versions.add(result.prompt_version)
-            logits.append(torch.as_tensor(result.logits, dtype=torch.float32))
-            generations.append(result.raw_text)
-            slice_metadata.append({"modality": record.modality, "slice_index": record.slice_index, "checksum": ""})
-        label = TUMOR_TYPES.index(labels[0])
-        patients[patient_id] = {
-            "label": label,
-            "slice_ids": [f"{patient_id}:{item.modality}:{item.slice_index}" for item in ordered],
-            "modalities": [MODALITY_MAP[item.modality] for item in ordered],
-            "logits": torch.stack(logits),
-            "valid_mask": [True] * len(ordered),
-            "slice_metadata": slice_metadata,
-            "raw_generations": generations,
-        }
-    return {
-        "metadata": {
-            "schema_version": "1.0",
-            "feature_kind": "logits",
-            "logit_dimension": 5,
-            "hidden_dimension": 0,
-            "modality_map": MODALITY_MAP,
-            "prompt_version": next(iter(prompt_versions)) if len(prompt_versions) == 1 else "mixed",
-        },
-        "patients": patients,
-    }
-
-
-def diagnose_patient(store: dict, patient_id: str, predictor: PatientMilPredictor) -> DiagnosticResult:
-    patient = store["patients"][patient_id]
-    prediction = predictor.predict_patient(patient, store["metadata"])
-    if (
-        not isinstance(prediction.logits, torch.Tensor)
-        or prediction.logits.shape != (1, len(TUMOR_TYPES))
-        or not bool(torch.isfinite(prediction.logits).all())
-    ):
-        raise ValueError("AttentionMIL predictor must return one finite tumor logit vector")
-    patient_logits = prediction.logits[0]
-    class_index = int(patient_logits.argmax())
-    tumor_type = TUMOR_TYPES[class_index]
-    grade = vote_who_grade_for_tumor(patient.get("raw_generations", []), tumor_type)
-    rejected_votes = [
-        {
-            "slice_index": vote.slice_index,
-            "tumor_type": vote.tumor_type,
-            "who_grade": vote.grade,
-            "reason": vote.reason,
-        }
-        for vote in grade.rejected_votes
-    ]
-    provenance = {
-        "raw_generations": patient["raw_generations"],
-        "who_vote_counts": grade.vote_counts,
-        "rejected_votes": rejected_votes,
-        "rejected_vote_count": len(rejected_votes),
-        "mil_evidence_weights": prediction.evidence_weights.detach().cpu().flatten().tolist(),
-        "mil_attention_weights": prediction.attention_weights.detach().cpu().flatten().tolist(),
-    }
-    if grade.status != "completed":
+        if case_input.case_id != self.inference_case.patient_id:
+            raise ValueError("case_id does not match the diagnostic inference case")
+        tumor = self.tumor_service.predict(self.inference_case)
+        if not isinstance(tumor, TumorPredictionResult):
+            raise TypeError("tumor service must return TumorPredictionResult")
+        if tumor.patient_id != self.inference_case.patient_id:
+            raise ValueError("tumor result patient_id does not match the inference case")
+        who = self.who_grade_service.predict(self.inference_case, tumor.tumor_type)
+        if not isinstance(who, WhoGradePredictionResult):
+            raise TypeError("WHO service must return WhoGradePredictionResult")
+        if who.patient_id != self.inference_case.patient_id:
+            raise ValueError("WHO result patient_id does not match the inference case")
+        if who.tumor_type != tumor.tumor_type:
+            raise ValueError("WHO result tumor_type does not match the tumor result")
         return DiagnosticResult(
-            status=StepStatus("failed", grade.reason),
-            tumor_type=tumor_type,
-            provenance=provenance,
+            status=StepStatus("completed"),
+            tumor_type=tumor.tumor_type,
+            who_grade=who.who_grade,
+            probabilities=tumor.probabilities,
+            provenance=_diagnostic_provenance(tumor, who),
         )
-    probabilities = torch.softmax(patient_logits, dim=0).tolist()
-    return DiagnosticResult(
-        status=StepStatus("completed"),
-        tumor_type=tumor_type,
-        who_grade=grade.grade,
-        probabilities=tuple(float(value) for value in probabilities),
-        provenance=provenance,
-    )

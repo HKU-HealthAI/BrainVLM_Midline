@@ -1,104 +1,178 @@
 from pathlib import Path
 
-import numpy as np
 import pytest
-import torch
 
-from midline_agent.datasets.annotations import AnnotationRecord
-from midline_agent.diagnostic.adapters import WhoGradeSliceResult
-from midline_agent.diagnostic.attention_mil import MilOutput
-from midline_agent.diagnostic.workflow import build_feature_store, diagnose_patient
-
-
-class StubMilPredictor:
-    def __init__(self) -> None:
-        self.calls = []
-
-    def predict_patient(self, patient, metadata) -> MilOutput:
-        self.calls.append((patient, metadata))
-        return MilOutput(
-            logits=torch.tensor([[0.0, 0.0, 5.0, 0.0, 0.0]]),
-            evidence_weights=torch.tensor([[0.8]]),
-            attention_weights=torch.tensor([[1.0]]),
-        )
+from midline_agent.datasets.inference_annotations import InferenceCase, InferenceSlice
+from midline_agent.diagnostic.standalone import (
+    TumorPredictionResult,
+    WhoGradePredictionResult,
+)
+from midline_agent.diagnostic.workflow import DiagnosticWorkflow
+from midline_agent.schema import CaseInput
 
 
-class StubDiagnosticAdapter:
-    def predict_who_grade(self, request) -> WhoGradeSliceResult:
-        return WhoGradeSliceResult(
-            raw_text="<tumor_1> <grade_4>",
-            logits=np.array([5.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            prompt_version=request.prompt_version,
-        )
+def _case(tmp_path: Path, patient_id: str = "patient-a") -> InferenceCase:
+    image = tmp_path / "slice.png"
+    image.write_bytes(b"not-read-by-workflow")
+    item = InferenceSlice(patient_id, image, "T1", 0, 52.0)
+    return InferenceCase(patient_id, (item,), 52.0)
 
 
-def test_workflow_extracts_features_and_requires_mil_prediction(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.npy"
-    np.save(image_path, np.ones((8, 8), dtype=np.float32))
-    records = [AnnotationRecord("synthetic-1", image_path, "T1", 0, "tumor_1", "grade_4")]
-
-    store = build_feature_store(records, StubDiagnosticAdapter())
-    store["patients"]["synthetic-1"]["raw_generations"] = ["<tumor_3> <grade_4>"]
-    predictor = StubMilPredictor()
-    result = diagnose_patient(store, "synthetic-1", predictor)
-
-    assert store["patients"]["synthetic-1"]["logits"].shape == (1, 5)
-    assert len(predictor.calls) == 1
-    assert result.status.state == "completed"
-    assert result.tumor_type == "tumor_3"
-    assert result.who_grade == "grade_4"
-    assert result.probabilities[2] > 0.9
-
-
-def test_workflow_has_no_mean_aggregation_fallback() -> None:
-    source = Path("midline_agent/diagnostic/workflow.py").read_text(encoding="utf-8")
-
-    assert ".mean(" not in source
-    with pytest.raises(TypeError):
-        diagnose_patient({"metadata": {}, "patients": {"p": {}}}, "p")
-
-
-def test_workflow_preserves_tumor_mismatched_votes_in_provenance(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.npy"
-    np.save(image_path, np.ones((8, 8), dtype=np.float32))
-    store = build_feature_store(
-        [AnnotationRecord("patient-a", image_path, "T1", 0, "tumor_1", "grade_4")],
-        StubDiagnosticAdapter(),
+def _tumor_result(patient_id: str = "patient-a") -> TumorPredictionResult:
+    return TumorPredictionResult(
+        patient_id=patient_id,
+        tumor_type="tumor_4",
+        logits=(0.0, 0.0, 0.0, 4.0, 0.0),
+        probabilities=(0.05, 0.05, 0.05, 0.8, 0.05),
+        slice_count=30,
+        aligned_slice_count=20,
+        modality_counts={"T1": 7, "T1CE": 8, "T2": 7, "FLAIR": 8},
+        checkpoint_sha256={
+            "brainvlm_midline": "a" * 64,
+            "mil": "b" * 64,
+        },
+        preprocessing={
+            "preprocessing_version": "brainvlm-midline-v1",
+            "private_path": "/private/tumor/checkpoint",
+        },
     )
-    store["patients"]["patient-a"]["raw_generations"] = [
-        "<tumor_1> <grade_4>",
-        "<tumor_3> <grade_4>",
+
+
+def _who_result(patient_id: str = "patient-a") -> WhoGradePredictionResult:
+    return WhoGradePredictionResult(
+        patient_id=patient_id,
+        tumor_type="tumor_4",
+        who_grade="grade_3",
+        method="model_vote",
+        slice_count=30,
+        vote_counts={"grade_2": 2, "grade_3": 27},
+        rejected_vote_count=1,
+        invalid_vote_count=0,
+        checkpoint_sha256="c" * 64,
+        preprocessing={
+            "preprocessing_version": "brainvlm-midline-v1",
+            "raw_generation": "PRIVATE_GENERATION_SENTINEL",
+            "url": "https://private.invalid/model",
+        },
+    )
+
+
+class StubTumorService:
+    def __init__(self, result: TumorPredictionResult, calls: list[object]) -> None:
+        self.result = result
+        self.calls = calls
+
+    def predict(self, case: InferenceCase) -> TumorPredictionResult:
+        self.calls.append(("tumor", case))
+        return self.result
+
+
+class StubWhoService:
+    def __init__(self, result: WhoGradePredictionResult, calls: list[object]) -> None:
+        self.result = result
+        self.calls = calls
+
+    def predict(self, case: InferenceCase, tumor_type: str) -> WhoGradePredictionResult:
+        self.calls.append(("who", case, tumor_type))
+        return self.result
+
+
+def test_workflow_runs_shared_services_in_order_and_converts_results(tmp_path: Path) -> None:
+    inference_case = _case(tmp_path)
+    calls: list[object] = []
+    workflow = DiagnosticWorkflow(
+        inference_case,
+        StubTumorService(_tumor_result(), calls),
+        StubWhoService(_who_result(), calls),
+    )
+
+    result = workflow.run(CaseInput(case_id="patient-a"))
+
+    assert calls == [
+        ("tumor", inference_case),
+        ("who", inference_case, "tumor_4"),
     ]
-
-    result = diagnose_patient(store, "patient-a", StubMilPredictor())
-
     assert result.status.state == "completed"
-    assert result.tumor_type == "tumor_3"
-    assert result.who_grade == "grade_4"
-    assert result.provenance["rejected_vote_count"] == 1
-    assert result.provenance["rejected_votes"][0]["tumor_type"] == "tumor_1"
+    assert result.tumor_type == "tumor_4"
+    assert result.who_grade == "grade_3"
+    assert result.probabilities == (0.05, 0.05, 0.05, 0.8, 0.05)
+    assert result.provenance == {
+        "checkpoint_sha256": {
+            "tumor_model": "a" * 64,
+            "mil": "b" * 64,
+            "who_model": "c" * 64,
+        },
+        "preprocessing_version": "brainvlm-midline-v1",
+        "tumor_slice_count": 30,
+        "aligned_slice_count": 20,
+        "modality_counts": {"T1": 7, "T1CE": 8, "T2": 7, "FLAIR": 8},
+        "who_method": "model_vote",
+        "who_slice_count": 30,
+        "vote_counts": {"grade_2": 2, "grade_3": 27},
+        "rejected_vote_count": 1,
+        "invalid_vote_count": 0,
+    }
+    serialized = str(result.provenance)
+    assert "PRIVATE_GENERATION_SENTINEL" not in serialized
+    assert "/private/" not in serialized
+    assert "private.invalid" not in serialized
 
 
-def test_build_feature_store_rejects_inconsistent_patient_tumor_labels(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.npy"
-    np.save(image_path, np.ones((8, 8), dtype=np.float32))
-    records = [
-        AnnotationRecord("patient-a", image_path, "T1", 0, "tumor_1"),
-        AnnotationRecord("patient-a", image_path, "T2", 1, "tumor_2"),
-    ]
+def test_workflow_rejects_case_input_for_another_patient_before_inference(tmp_path: Path) -> None:
+    calls: list[object] = []
+    workflow = DiagnosticWorkflow(
+        _case(tmp_path),
+        StubTumorService(_tumor_result(), calls),
+        StubWhoService(_who_result(), calls),
+    )
 
-    with pytest.raises(ValueError, match="inconsistent tumor labels"):
-        build_feature_store(records, StubDiagnosticAdapter())
+    with pytest.raises(ValueError, match="case_id"):
+        workflow.run(CaseInput(case_id="patient-b"))
+
+    assert calls == []
 
 
-@pytest.mark.parametrize("tumor_type", ["", None, "unknown"])
-def test_build_feature_store_rejects_missing_or_invalid_tumor_label(
+@pytest.mark.parametrize("stage", ["tumor", "who"])
+def test_workflow_rejects_standalone_result_for_another_patient(
     tmp_path: Path,
-    tumor_type,
+    stage: str,
 ) -> None:
-    image_path = tmp_path / "slice.npy"
-    np.save(image_path, np.ones((8, 8), dtype=np.float32))
-    records = [AnnotationRecord("patient-a", image_path, "T1", 0, tumor_type)]
+    calls: list[object] = []
+    tumor = _tumor_result("patient-b" if stage == "tumor" else "patient-a")
+    who = _who_result("patient-b" if stage == "who" else "patient-a")
+    workflow = DiagnosticWorkflow(
+        _case(tmp_path),
+        StubTumorService(tumor, calls),
+        StubWhoService(who, calls),
+    )
 
-    with pytest.raises(ValueError, match="invalid tumor label"):
-        build_feature_store(records, StubDiagnosticAdapter())
+    with pytest.raises(ValueError, match="patient_id"):
+        workflow.run(CaseInput(case_id="patient-a"))
+
+
+def test_workflow_rejects_who_result_for_another_tumor_type(tmp_path: Path) -> None:
+    calls: list[object] = []
+    who = _who_result()
+    object.__setattr__(who, "tumor_type", "tumor_2")
+    workflow = DiagnosticWorkflow(
+        _case(tmp_path),
+        StubTumorService(_tumor_result(), calls),
+        StubWhoService(who, calls),
+    )
+
+    with pytest.raises(ValueError, match="tumor_type"):
+        workflow.run(CaseInput(case_id="patient-a"))
+
+
+def test_workflow_contains_no_legacy_adapter_or_attention_mil_path() -> None:
+    source = Path("midline_agent/diagnostic/workflow.py").read_text(encoding="ascii")
+
+    for removed in (
+        "BrainVlmAttentionMilWorkflow",
+        "build_feature_store",
+        "diagnose_patient",
+        "DiagnosticModelAdapter",
+        "AttentionMIL",
+        "raw_generations",
+    ):
+        assert removed not in source

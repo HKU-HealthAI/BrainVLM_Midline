@@ -17,7 +17,7 @@ class MidlineOrchestrator:
 
     def __init__(
         self,
-        llm_client: LlmClient,
+        llm_client: LlmClient | None,
         *,
         diagnostic_workflow: Any | None = None,
         survival_workflow: Any | None = None,
@@ -27,16 +27,20 @@ class MidlineOrchestrator:
         self.llm_client = llm_client
         self.diagnostic_workflow = diagnostic_workflow
         self.survival_workflow = survival_workflow
-        self.treatment_agent = TreatmentAgent(
-            llm_client,
-            treatment_providers,
-            provider_timeout_seconds=provider_timeout_seconds,
+        self.treatment_agent = (
+            TreatmentAgent(
+                llm_client,
+                treatment_providers,
+                provider_timeout_seconds=provider_timeout_seconds,
+            )
+            if llm_client is not None
+            else None
         )
 
     def _run_diagnostic(self, case_input: CaseInput) -> DiagnosticResult:
         workflow = self.diagnostic_workflow
         if workflow is None:
-            return DiagnosticResult.unavailable("no external diagnostic adapter configured")
+            return DiagnosticResult.unavailable("diagnostic checkpoints are not configured")
         try:
             if callable(workflow):
                 result = workflow(case_input)
@@ -70,6 +74,8 @@ class MidlineOrchestrator:
             return SurvivalResult(status=StepStatus("failed", "survival step failed"))
 
     def _request_handoff(self, state: CaseState) -> bool:
+        if self.llm_client is None:
+            raise RuntimeError("OpenAI is not configured")
         response = self.llm_client.generate(
             LlmRequest(
                 system=(
@@ -121,6 +127,15 @@ class MidlineOrchestrator:
                     status=StepStatus(
                         "failed",
                         "Treatment was skipped because the Survival step failed",
+                    )
+                )
+            )
+        if self.llm_client is None or self.treatment_agent is None:
+            return state.with_treatment(
+                TreatmentResult(
+                    status=StepStatus(
+                        "unavailable",
+                        "OpenAI is not configured for Treatment",
                     )
                 )
             )

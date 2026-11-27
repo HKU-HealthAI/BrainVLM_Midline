@@ -25,13 +25,14 @@ def test_pipeline_runner_exposes_no_custom_openai_endpoint() -> None:
     assert endpoint_argument_name not in source
     assert "user-supplied LLM endpoint" not in source
     assert "--mock-diagnostic" not in source
+    assert "sys.path" not in source
 
 
 def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "scripts/run_pipeline.py").read_text(encoding="utf-8")
     completed = subprocess.run(
-        [sys.executable, "scripts/run_pipeline.py", "--help"],
+        [sys.executable, "-m", "scripts.run_pipeline", "--help"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -518,7 +519,7 @@ def test_pipeline_persists_minimized_trace_for_failed_downstream_step(
     assert exit_code == 1
 
 
-def test_pipeline_writes_failed_trace_when_openai_configuration_is_missing(
+def test_pipeline_marks_unconfigured_steps_unavailable_when_openai_configuration_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
     import scripts.run_pipeline as run_pipeline
@@ -534,6 +535,10 @@ def test_pipeline_writes_failed_trace_when_openai_configuration_is_missing(
         ["run_pipeline.py", "--case-json", str(case_path), "--output", str(output_path)],
     )
 
-    assert run_pipeline.main() == 1
+    assert run_pipeline.main() == 0
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["steps"][2]["status"]["state"] == "failed"
+    assert [step["status"]["state"] for step in payload["steps"]] == [
+        "unavailable",
+        "unavailable",
+        "unavailable",
+    ]

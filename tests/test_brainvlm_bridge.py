@@ -264,14 +264,15 @@ def test_predict_who_grade_requires_brainvlm_prompt_version_and_preserves_it(tmp
     assert result.prompt_version == PROMPT_VERSION
 
 
-def test_cli_scripts_use_internal_runtime_for_feature_extraction() -> None:
+def test_cli_scripts_use_internal_runtime_for_feature_extraction_and_pipeline() -> None:
     root = Path(__file__).resolve().parents[1]
     extract_source = (root / "scripts/extract_features.py").read_text(encoding="utf-8")
     pipeline_source = (root / "scripts/run_pipeline.py").read_text(encoding="utf-8")
     assert "BrainVlmRuntime.load" in extract_source
     assert "load_brainvlm_adapter" not in extract_source
     assert "load_external_adapter" not in extract_source
-    assert "load_brainvlm_adapter" in pipeline_source
+    assert "_load_brainvlm_runtime" in pipeline_source
+    assert "load_brainvlm_adapter" not in pipeline_source
     assert "load_external_adapter" not in pipeline_source
 
 

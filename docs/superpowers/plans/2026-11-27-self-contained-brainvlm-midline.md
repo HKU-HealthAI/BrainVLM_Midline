@@ -464,25 +464,25 @@ git commit -m "refactor: run diagnostic checkpoints from internal source"
 - Create: `tests/acceptance/run_installed_diagnostic.py`
 - Create: `test_data/utsw_glioma_bt0156/case.json`
 
-- [ ] **Step 1: Write failing shared-service workflow tests**
+- [x] **Step 1: Write failing shared-service workflow tests**
 
 Assert `midline-run` constructs the same `TumorPredictionService`, `WhoGradePredictionService`, internal runtime, and `LogitsMilPredictor` as standalone inference, then converts their validated outputs to `DiagnosticResult`. Assert Survival remains wired as currently released and Treatment uses the existing deterministic client in tests. No AttentionMIL adapter or external factory may be constructed. Add a label-free public `case.json` containing only the BT0156 case identifier and an empty public clinical/MRI manifest sufficient to exercise the public Diagnostic CLI; reject diagnostic labels in this fixture. Create `tests/acceptance/run_installed_diagnostic.py` as an executable asset-driven runner with explicit arguments for annotations, images, foundation assets, three checkpoints, device, output, and expected labels. It must assert all `midline_agent` module origins are beneath the active environment, inject deterministic non-network Survival/Treatment components, execute the public orchestrator, and validate the privacy-minimized trace.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/test_diagnostic_workflow.py tests/test_orchestrator.py tests/diagnostic/test_pipeline_diagnostic_assets.py`, then run `python tests/acceptance/run_installed_diagnostic.py --help`.
 
 Expected: FAIL because `run_pipeline.py` still uses the generic adapter path.
 
-- [ ] **Step 3: Implement shared diagnostic orchestration**
+- [x] **Step 3: Implement shared diagnostic orchestration**
 
 Accept the same diagnostic model assets as standalone commands, invoke tumor then WHO services, preserve trace minimization, and surface missing assets as an explicit unavailable state only when the Diagnostic Sub-Agent was not requested/configured. Never silently substitute a different predictor.
 
-- [ ] **Step 4: Run workflow tests**
+- [x] **Step 4: Run workflow tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit orchestration changes**
+- [x] **Step 5: Commit orchestration changes**
 
 ```bash
 git add scripts/run_pipeline.py midline_agent/diagnostic/workflow.py midline_agent/orchestrator.py tests/test_diagnostic_workflow.py tests/test_orchestrator.py tests/diagnostic/test_pipeline_diagnostic_assets.py tests/acceptance/run_installed_diagnostic.py test_data/utsw_glioma_bt0156/case.json

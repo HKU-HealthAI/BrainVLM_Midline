@@ -79,6 +79,7 @@ scripts/train_attention_mil.py
 scripts/train_brainvlm_midline.py
 test_data/utsw_glioma_bt0156/ATTRIBUTION.md
 test_data/utsw_glioma_bt0156/annotations.json
+test_data/utsw_glioma_bt0156/case.json
 test_data/utsw_glioma_bt0156/images/flair_004.png
 test_data/utsw_glioma_bt0156/images/flair_027.png
 test_data/utsw_glioma_bt0156/images/flair_053.png
@@ -111,6 +112,8 @@ test_data/utsw_glioma_bt0156/images/t2_128.png
 test_data/utsw_glioma_bt0156/images/t2_138.png
 test_data/utsw_glioma_bt0156/tumor_label_definitions.json
 tests/__init__.py
+tests/acceptance/__init__.py
+tests/acceptance/run_installed_diagnostic.py
 tests/conftest.py
 tests/diagnostic/__init__.py
 tests/diagnostic/ddp_smoke.py
@@ -122,6 +125,7 @@ tests/diagnostic/test_brainvlm_prompts.py
 tests/diagnostic/test_brainvlm_training.py
 tests/diagnostic/test_brainvlm_vision.py
 tests/diagnostic/test_feature_extraction_cli.py
+tests/diagnostic/test_pipeline_diagnostic_assets.py
 tests/diagnostic/test_slice_features.py
 tests/fixtures/brainvlm_training/annotations.json
 tests/test_annotations.py

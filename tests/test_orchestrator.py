@@ -34,7 +34,7 @@ def test_orchestrator_run_has_no_diagnostic_bypass_parameters() -> None:
 
 
 def test_orchestrator_continues_with_unconfigured_survival_fallback() -> None:
-    workflow = lambda case: DiagnosticResult.unavailable("external checkpoint is not configured")
+    workflow = lambda case: DiagnosticResult.unavailable("diagnostic checkpoints are not configured")
     state = MidlineOrchestrator(
         SuccessfulClient(),
         diagnostic_workflow=workflow,
@@ -45,6 +45,46 @@ def test_orchestrator_continues_with_unconfigured_survival_fallback() -> None:
     assert state.diagnostic.status.state == "unavailable"
     assert state.survival.status.state == "unavailable"
     assert state.treatment.status.state == "completed"
+
+
+def test_orchestrator_without_llm_runs_diagnostic_and_survival_then_marks_treatment_unavailable() -> None:
+    calls = []
+
+    def diagnostic_workflow(case_input):
+        calls.append(("diagnostic", case_input.case_id))
+        return DiagnosticResult(
+            status=StepStatus("completed"),
+            tumor_type="tumor_4",
+            who_grade="grade_3",
+        )
+
+    def survival_workflow(case_input, diagnostic_result):
+        calls.append(("survival", case_input.case_id, diagnostic_result.tumor_type))
+        return SurvivalResult.unavailable("survival checkpoint is not configured")
+
+    state = MidlineOrchestrator(
+        None,
+        diagnostic_workflow=diagnostic_workflow,
+        survival_workflow=survival_workflow,
+    ).run(CaseInput(case_id="synthetic-1"))
+
+    assert calls == [
+        ("diagnostic", "synthetic-1"),
+        ("survival", "synthetic-1", "tumor_4"),
+    ]
+    assert state.diagnostic.status.state == "completed"
+    assert state.survival.status.state == "unavailable"
+    assert state.treatment.status.state == "unavailable"
+    assert "OpenAI" in state.treatment.status.reason
+
+
+def test_orchestrator_unconfigured_diagnostic_message_does_not_reference_external_adapter() -> None:
+    state = MidlineOrchestrator(None).run(CaseInput(case_id="synthetic-1"))
+
+    assert state.diagnostic.status.state == "unavailable"
+    assert "external" not in state.diagnostic.status.reason.lower()
+    assert "adapter" not in state.diagnostic.status.reason.lower()
+    assert state.treatment.status.state == "unavailable"
 
 
 def test_orchestrator_runs_injected_diagnostic_workflow() -> None:

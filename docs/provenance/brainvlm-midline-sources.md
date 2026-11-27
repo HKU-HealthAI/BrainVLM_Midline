@@ -87,6 +87,9 @@ file-header and license requirements before commit.
 | `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
 | `scripts/predict_tumor.py` | `ad9bc821b944dba20527e1bb810bb67a9a9817bcecb6282a6eb396a411b7af4f` | Internal BrainVLM-Midline tumor command; MIT |
 | `scripts/predict_who_grade.py` | `db1e514fec5ff40275fef4327f268b8ef01faedf985a41cc73f4d827a48e8fb9` | Internal BrainVLM-Midline WHO grading command; MIT |
+| `midline_agent/diagnostic/workflow.py` | `ae9752e1e027884a7b74008fb05c0bf3e1399bee5a7680da5833ae36fc8905d1` | Shared checkpoint-service Diagnostic workflow; MIT |
+| `midline_agent/orchestrator.py` | `046007060b715e4532cb9bb167d83c3b3130a36342b5cdc02785ad88c225253d` | Optional-Treatment orchestration for Diagnostic-only execution; MIT |
+| `scripts/run_pipeline.py` | `6fd4f92f082b2500b4394487aeec18729577c9bfc5148ba1c8399c779308cdfe` | Shared-service public orchestration command; MIT |
 | `scripts/run_tumor_prediction.sh` | `7972e31b476bf63c81d9de2234d8d656cdb774dd8303f9b98990267fd8013073` | Caller-configured tumor launcher; MIT |
 | `scripts/run_who_grading.sh` | `f5584fc9bb9b36031fa2ae647113d04b71671fa803086dbe86630a72336b4e4d` | Caller-configured WHO grading launcher; MIT |
 | `scripts/run_tumor_prediction.sbatch` | `e6be44fcf7007180104bc500e271e0bfbe159b73c13dc8d38b6ee68e48588c41` | Caller-owned Slurm tumor launcher; MIT |
