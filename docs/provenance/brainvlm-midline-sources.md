@@ -110,8 +110,8 @@ behavior instead.
 | `scripts/run_pipeline.py` | `6fd4f92f082b2500b4394487aeec18729577c9bfc5148ba1c8399c779308cdfe` | Shared-service public orchestration command; MIT |
 | `scripts/run_tumor_prediction.sh` | `7972e31b476bf63c81d9de2234d8d656cdb774dd8303f9b98990267fd8013073` | Caller-configured tumor launcher; MIT |
 | `scripts/run_who_grading.sh` | `f5584fc9bb9b36031fa2ae647113d04b71671fa803086dbe86630a72336b4e4d` | Caller-configured WHO grading launcher; MIT |
-| `scripts/run_tumor_prediction.sbatch` | `e6be44fcf7007180104bc500e271e0bfbe159b73c13dc8d38b6ee68e48588c41` | Caller-owned Slurm tumor launcher; MIT |
-| `scripts/run_who_grading.sbatch` | `a4642373c6a397d41ecb03a39fa047c776663fae7d2c01743d2bc7268778f500` | Caller-owned Slurm WHO grading launcher; MIT |
+| `scripts/run_tumor_prediction.sbatch` | `c7fc45631a5ffa32f2812d2e77c2526c5fb9e30870930f6f80951168f77e5a5d` | Caller-owned Slurm tumor launcher; MIT |
+| `scripts/run_who_grading.sbatch` | `0eda9784eafa857ecd3720e27f1a989b09322e81615c31e5372a286588d2eec6` | Caller-owned Slurm WHO grading launcher; MIT |
 
 ## License Files
 
