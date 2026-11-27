@@ -106,7 +106,7 @@ POLICY_CONTENT_PATHS = (
     "scripts/release_audit.py",
     "tests/test_release_audit.py",
 )
-PUBLIC_TEST_IMAGE_DIRECTORY = Path("test_data/utsw_glioma_bt0323/images")
+PUBLIC_TEST_IMAGE_DIRECTORY = Path("test_data/utsw_glioma_bt0156/images")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NON_LITERAL = object()
 

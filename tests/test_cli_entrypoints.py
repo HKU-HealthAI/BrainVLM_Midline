@@ -270,7 +270,7 @@ def test_readme_documents_reproducible_checkpoint_inference() -> None:
         "15fch44MAuqOE4g4vuPegwAaFZn2EDk-M",
         "Llama 3.1-8B Instruct",
         "BiomedCLIP",
-        "test_data/utsw_glioma_bt0323/annotations.json",
+        "test_data/utsw_glioma_bt0156/annotations.json",
         "scripts/run_tumor_prediction.sh",
         "scripts/run_who_grading.sh",
         "scripts/run_tumor_prediction.sbatch",

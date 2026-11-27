@@ -229,7 +229,7 @@ def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> N
 
 
 def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_path: Path) -> None:
-    allowed = tmp_path / "test_data" / "utsw_glioma_bt0323" / "images" / "t1_001.png"
+    allowed = tmp_path / "test_data" / "utsw_glioma_bt0156" / "images" / "t1_001.png"
     allowed.parent.mkdir(parents=True)
     allowed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"fixture")
 

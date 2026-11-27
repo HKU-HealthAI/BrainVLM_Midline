@@ -103,8 +103,8 @@ training.
 
 ## Public Test Case
 
-The first candidate is `BT0323` from the UTSW-Glioma collection. The release
-will contain its 30 selected, de-identified 2D PNG slices and a label-free
+The selected public case is `BT0156` from the UTSW-Glioma collection. The
+release contains its 30 selected, de-identified 2D PNG slices and a label-free
 inference annotation file. Filenames will be normalized to short ASCII names.
 No generated result file will be committed.
 
@@ -118,12 +118,11 @@ repository will include:
 - a statement that the repository files are selected 2D PNG derivatives of
   the original MRI data.
 
-The final runtime will be tested with the real tumor, MIL, and WHO checkpoints.
-`BT0323` will remain in the release only if the final tumor command predicts
-`tumor_4` and the final WHO command predicts `grade_3`. If deterministic final
-inference changes either result, the same verification will be applied to the
-pre-screened UTSW candidates in order, and only a case with both correct
-patient-level outputs will be published.
+The final runtime is tested with the real tumor, MIL, and WHO checkpoints.
+`BT0156` was selected because the tumor command predicts `tumor_4` and the WHO
+command predicts `grade_3`. The release retains only the label-free input and
+documents these labels as verification targets; generated outputs are not
+committed.
 
 ## Execution Interfaces
 

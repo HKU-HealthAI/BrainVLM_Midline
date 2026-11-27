@@ -82,12 +82,12 @@ The related BrainVLM project supports volumetric `.nii.gz` and `.npy` inputs.
 This repository's checkpoint inference commands instead operate on preselected
 2D MRI slices and do not provide a 3D-to-2D conversion command.
 
-An attributed test case is included at `test_data/utsw_glioma_bt0323/`. It
-contains 30 selected axial PNG slices from subject BT0323 in the UTSW-Glioma
-collection: 6 T1, 11 T1CE, 6 T2, and 7 FLAIR slices. The source citation,
+An attributed test case is included at `test_data/utsw_glioma_bt0156/`. It
+contains 30 selected axial PNG slices from subject BT0156 in the UTSW-Glioma
+collection: 7 T1, 8 T1CE, 7 T2, and 8 FLAIR slices. The source citation,
 modification notice, and CC BY 4.0 terms are recorded in the case-level
 `ATTRIBUTION.md` and at https://doi.org/10.7937/DFAE-1B86. The label-free input
-file is `test_data/utsw_glioma_bt0323/annotations.json`. No generated
+file is `test_data/utsw_glioma_bt0156/annotations.json`. No generated
 prediction is bundled.
 
 For other cases, place de-identified PNG or JPEG slices beneath a caller-owned
@@ -122,8 +122,8 @@ BiomedCLIP override is optional when the BrainVLM checkout can resolve its
 configured pretrained asset itself.
 
 ```bash
-export ANNOTATIONS="$PWD/test_data/utsw_glioma_bt0323/annotations.json"
-export IMAGE_ROOT="$PWD/test_data/utsw_glioma_bt0323"
+export ANNOTATIONS="$PWD/test_data/utsw_glioma_bt0156/annotations.json"
+export IMAGE_ROOT="$PWD/test_data/utsw_glioma_bt0156"
 export BRAINVLM_SOURCE=/path/to/BrainVLM
 export LLAMA_MODEL=/path/to/Llama-3.1-8B-Instruct
 export BIOMEDCLIP_PRETRAINED=/path/to/biomedclip-pretrained.bin
@@ -148,7 +148,7 @@ rule and the model checkpoint is not loaded. Other tumor classes use strict
 tumor-matched slice voting; mismatched and invalid model generations are
 counted rather than silently relabelled.
 
-The reference labels for BT0323 are `tumor_4` and `grade_3`. These values are
+The reference labels for BT0156 are `tumor_4` and `grade_3`. These values are
 provided only as verification targets. No generated prediction is bundled in
 the repository.
 

@@ -16,7 +16,7 @@ applicable upstream terms.
 
 ## UTSW-Glioma test case
 
-The files under `test_data/utsw_glioma_bt0323/images/` are modified, selected
+The files under `test_data/utsw_glioma_bt0156/images/` are modified, selected
 2D PNG derivatives from the UTSW-Glioma collection. The source data citation
 is Reddy et al. (2026), *The University of Texas Southwestern Glioma MRI
 dataset with molecular marker characterization and segmentations

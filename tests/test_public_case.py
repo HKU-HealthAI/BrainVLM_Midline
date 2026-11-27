@@ -7,7 +7,7 @@ from midline_agent.datasets.inference_annotations import load_inference_case
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CASE_ROOT = PROJECT_ROOT / "test_data" / "utsw_glioma_bt0323"
+CASE_ROOT = PROJECT_ROOT / "test_data" / "utsw_glioma_bt0156"
 
 
 def test_public_case_contains_exactly_30_decodable_label_free_slices() -> None:
@@ -17,7 +17,7 @@ def test_public_case_contains_exactly_30_decodable_label_free_slices() -> None:
     assert isinstance(records, list)
     assert len(records) == 30
     assert all(set(record) == {"patient_id", "image_path", "modality", "slice_index", "age"} for record in records)
-    assert all(record["patient_id"] == "BT0323" and record["age"] == 38 for record in records)
+    assert all(record["patient_id"] == "BT0156" and record["age"] == 53 for record in records)
     assert all(Path(record["image_path"]).as_posix().isascii() for record in records)
     assert not any(
         key in record
@@ -37,9 +37,15 @@ def test_public_case_contains_exactly_30_decodable_label_free_slices() -> None:
 def test_public_case_loads_all_four_modalities() -> None:
     case = load_inference_case(CASE_ROOT / "annotations.json", CASE_ROOT)
 
-    assert case.patient_id == "BT0323"
-    assert case.age == 38.0
+    assert case.patient_id == "BT0156"
+    assert case.age == 53.0
     assert {item.modality for item in case.slices} == {"T1", "T1CE", "T2", "FLAIR"}
+    assert {name: sum(item.modality == name for item in case.slices) for name in ("T1", "T1CE", "T2", "FLAIR")} == {
+        "T1": 7,
+        "T1CE": 8,
+        "T2": 7,
+        "FLAIR": 8,
+    }
     assert len(case.slices) == 30
 
 

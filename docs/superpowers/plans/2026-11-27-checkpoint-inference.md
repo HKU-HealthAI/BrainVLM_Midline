@@ -20,7 +20,7 @@
 - `scripts/predict_who_grade.py`: WHO CLI.
 - `scripts/run_tumor_prediction.sh`, `scripts/run_who_grading.sh`: portable launchers.
 - `scripts/run_tumor_prediction.sbatch`, `scripts/run_who_grading.sbatch`: Slurm launchers.
-- `test_data/utsw_glioma_bt0323/`: attributed label-free public smoke-test input.
+- `test_data/utsw_glioma_bt0156/`: attributed label-free public smoke-test input.
 - `tests/test_inference_annotations.py`: inference input tests.
 - `tests/test_logits_mil.py`: alignment, arithmetic, and checkpoint tests.
 - `tests/test_standalone_diagnostic.py`: stage orchestration and result tests.
@@ -283,9 +283,9 @@ git commit -m "feat: expose tumor and WHO prediction commands"
 ### Task 6: Add and license the public test case
 
 **Files:**
-- Create: `test_data/utsw_glioma_bt0323/annotations.json`
-- Create: `test_data/utsw_glioma_bt0323/ATTRIBUTION.md`
-- Create: `test_data/utsw_glioma_bt0323/images/*.png`
+- Create: `test_data/utsw_glioma_bt0156/annotations.json`
+- Create: `test_data/utsw_glioma_bt0156/ATTRIBUTION.md`
+- Create: `test_data/utsw_glioma_bt0156/images/*.png`
 - Create: `tests/test_public_case.py`
 - Modify: `THIRD_PARTY_NOTICES.md`
 - Modify: `scripts/release_audit.py`
@@ -309,7 +309,7 @@ Run: `pytest tests/test_public_case.py tests/test_release_audit.py -q`
 
 Expected: failures because the case and narrow exception are absent.
 
-- [ ] **Step 4: Copy and normalize the 30 selected BT0323 slices**
+- [ ] **Step 4: Copy and normalize the 30 selected BT0156 slices**
 
 Build annotations from the source keyframe JSON, rename files to short ASCII
 names while retaining modality and slice index, and omit source labels and
@@ -395,7 +395,7 @@ git commit -m "feat: add portable diagnostic launchers"
 
 Require the three checkpoint download links, external BrainVLM checkout,
 Llama and BiomedCLIP preparation, public-case citation, independent tumor and
-WHO commands, shell and Slurm usage, WHO rule behavior, expected BT0323 labels,
+WHO commands, shell and Slurm usage, WHO rule behavior, expected BT0156 labels,
 and a statement that no generated result is bundled.
 
 - [ ] **Step 2: Run documentation tests and verify RED**
@@ -450,7 +450,7 @@ Use the existing BrainVLM environment and local source checkout with:
 
 Inspect scheduler state and logs. A successful exit without a valid result is
 not sufficient. Confirm 30 actual slice calls, a loaded MIL checkpoint, finite
-patient probabilities, and `tumor_4` for BT0323.
+patient probabilities, and `tumor_4` for BT0156.
 
 - [ ] **Step 3: Diagnose any failure systematically**
 
@@ -469,9 +469,10 @@ present, valid matching votes remain, and the patient result is `grade_3`.
 
 - [ ] **Step 6: Apply the approved fallback case policy if necessary**
 
-If final deterministic inference makes BT0323 incorrect, test pre-screened
-UTSW candidates in order and replace the public case only after both stages
-are correct with the final code. Update attribution and integrity tests.
+This fallback was not required. Final deterministic inference selected BT0156
+after the tumor stage predicted `tumor_4` and the WHO stage predicted
+`grade_3`. The committed case remains label-free and contains no generated
+results.
 
 - [ ] **Step 7: Add regression coverage for every discovered defect**
 
