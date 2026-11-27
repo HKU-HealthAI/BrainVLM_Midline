@@ -80,6 +80,7 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/llama.py` | `9eb4265e30cd4fc811bfacf9a787e2e12590836d628e09b009a89569cadfeec3` | Clean wrapper around installed Transformers and PEFT; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/model.py` | `99c80b08c752b6a9414901ebddac44416dc60074cd49289dc225d9ec84f963be` | Clean behavioral reimplementation; MIT |
 | `midline_agent/diagnostic/checkpoints.py` | `79ad8650a061498d6f4075721f9d7bf1aa7b412189125bc26955bdaae07380a2` | Existing MIT implementation extended with strict BrainVLM-Midline loading |
+| `midline_agent/diagnostic/brainvlm_runtime.py` | `93577ef1a5e71ba84ce820d3c738af103a7526973f460efc4fc7c6dcfef4e28e` | Internal model runtime replacing source-checkout loading; MIT |
 
 ## License Files
 

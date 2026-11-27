@@ -1,7 +1,5 @@
-import sys
+from contextlib import nullcontext
 from pathlib import Path
-from types import ModuleType
-from types import SimpleNamespace
 
 import pytest
 import torch
@@ -9,90 +7,48 @@ from PIL import Image
 from torch import nn
 
 from midline_agent.datasets.inference_annotations import InferenceSlice
+from midline_agent.diagnostic import brainvlm_runtime
 from midline_agent.diagnostic.brainvlm_runtime import (
-    BIOMEDCLIP_MEAN,
-    BIOMEDCLIP_STD,
     BrainVlmRuntime,
     BrainVlmRuntimeError,
-    _construct_external_model,
+    SliceFeatures,
     _validate_device,
-    _validate_external_source,
-    _validate_module_origins,
-    load_brainvlm_checkpoint,
 )
 
 
-class TinyCheckpointModel(nn.Module):
-    def __init__(self) -> None:
+class FakeInternalModel(nn.Module):
+    def __init__(self, generation: object = "<tumor_4> <grade_3>") -> None:
         super().__init__()
-        self.projection = nn.Linear(2, 2)
+        self.anchor = nn.Parameter(torch.zeros(1))
+        self.generation = generation
+        self.feature_calls: list[tuple[torch.Tensor, str, tuple[str, ...]]] = []
+        self.generation_calls: list[dict[str, object]] = []
+
+    def maybe_autocast(self):
+        return nullcontext()
+
+    def extract_slice_features(self, image, prompt, class_tokens):
+        self.feature_calls.append((image.detach().cpu(), prompt, tuple(class_tokens)))
+        return torch.arange(5.0).unsqueeze(0), torch.arange(4096.0).unsqueeze(0)
+
+    def generate_step(self, image, prompt, high_resolution, **kwargs):
+        self.generation_calls.append(
+            {
+                "image": image.detach().cpu(),
+                "prompt": prompt,
+                "high_resolution": high_resolution,
+                **kwargs,
+            }
+        )
+        return self.generation
 
 
-def _save_model_checkpoint(path: Path, state: dict[str, torch.Tensor]) -> None:
-    torch.save({"model": state, "epoch": 3, "config": {"private": "ignored"}}, path)
+def _write_rgb(path: Path) -> None:
+    Image.new("RGB", (32, 16), color=(0, 64, 128)).save(path)
 
 
-def test_external_source_validation_rejects_missing_or_escaped_package(tmp_path: Path) -> None:
-    with pytest.raises(BrainVlmRuntimeError, match="source root"):
-        _validate_external_source(tmp_path / "missing")
-
-    source = tmp_path / "source"
-    source.mkdir()
-    outside = tmp_path / "outside"
-    (outside / "models").mkdir(parents=True)
-    (outside / "__init__.py").write_text("", encoding="ascii")
-    (outside / "models" / "minigpt4.py").write_text("", encoding="ascii")
-    (source / "minigpt4").symlink_to(outside, target_is_directory=True)
-
-    with pytest.raises(BrainVlmRuntimeError, match="inside source root"):
-        _validate_external_source(source)
-
-
-def test_module_origin_validation_rejects_another_checkout(tmp_path: Path) -> None:
-    source = tmp_path / "source"
-    package = source / "minigpt4"
-    package.mkdir(parents=True)
-    package_file = package / "__init__.py"
-    package_file.write_text("", encoding="ascii")
-    outside_file = tmp_path / "elsewhere.py"
-    outside_file.write_text("", encoding="ascii")
-
-    with pytest.raises(BrainVlmRuntimeError, match="outside source root"):
-        _validate_module_origins(source, {"minigpt4": SimpleNamespace(__file__=outside_file)})
-
-    _validate_module_origins(source, {"minigpt4": SimpleNamespace(__file__=package_file)})
-
-
-def test_external_model_construction_restores_preexisting_modules(tmp_path: Path) -> None:
-    source = tmp_path / "source"
-    package = source / "minigpt4"
-    models = package / "models"
-    models.mkdir(parents=True)
-    (package / "__init__.py").write_text("", encoding="ascii")
-    (models / "__init__.py").write_text("", encoding="ascii")
-    (models / "minigpt4.py").write_text(
-        "import torch\n"
-        "class MiniGPT4(torch.nn.Module):\n"
-        "    @classmethod\n"
-        "    def from_config(cls, config):\n"
-        "        return cls()\n",
-        encoding="ascii",
-    )
-    previous = ModuleType("minigpt4")
-    previous.__file__ = str(tmp_path / "previous" / "__init__.py")
-    original = sys.modules.get("minigpt4")
-    sys.modules["minigpt4"] = previous
-    try:
-        model = _construct_external_model(source, tmp_path / "llama", None)
-        assert isinstance(model, nn.Module)
-        assert sys.modules["minigpt4"] is previous
-        assert "minigpt4.models" not in sys.modules
-        assert "minigpt4.models.minigpt4" not in sys.modules
-    finally:
-        if original is None:
-            sys.modules.pop("minigpt4", None)
-        else:
-            sys.modules["minigpt4"] = original
+def _metadata(path: Path, age: float = 53.0) -> InferenceSlice:
+    return InferenceSlice("BT0156", path, "T1", 4, age)
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda", "cuda:-1", "cuda:abc", "cuda:2:1"])
@@ -105,191 +61,111 @@ def test_device_validation_rejects_unavailable_cuda(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     with pytest.raises(BrainVlmRuntimeError, match="not available"):
         _validate_device("cuda:0")
-
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
     with pytest.raises(BrainVlmRuntimeError, match="index"):
         _validate_device("cuda:1")
 
 
-def test_checkpoint_loader_uses_weights_only_and_ignores_training_config(
+def test_runtime_load_constructs_only_the_internal_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model = TinyCheckpointModel()
-    checkpoint = tmp_path / "model.pth"
-    state = {name: torch.full_like(value, 2.0) for name, value in model.state_dict().items()}
-    _save_model_checkpoint(checkpoint, state)
-    original_load = torch.load
+    llama = tmp_path / "llama"
+    llama.mkdir()
+    checkpoint = tmp_path / "checkpoint.pth"
+    checkpoint.write_bytes(b"weights")
+    biomedclip = tmp_path / "biomedclip.bin"
+    biomedclip.write_bytes(b"weights")
+    model = FakeInternalModel()
     observed: dict[str, object] = {}
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "set_device", lambda device: observed.update(device=device))
+    monkeypatch.setattr(
+        brainvlm_runtime,
+        "_construct_internal_model",
+        lambda assets: observed.update(assets=assets) or model,
+    )
+    monkeypatch.setattr(
+        brainvlm_runtime,
+        "load_brainvlm_checkpoint",
+        lambda path, loaded_model: observed.update(checkpoint=path, model=loaded_model),
+    )
+    monkeypatch.setattr(model, "to", lambda device: observed.update(model_device=device) or model)
 
-    def recording_load(*args, **kwargs):
-        observed.update(kwargs)
-        return original_load(*args, **kwargs)
+    runtime = BrainVlmRuntime.load(
+        llama,
+        checkpoint,
+        device="cuda:0",
+        biomedclip_pretrained=str(biomedclip),
+    )
 
-    monkeypatch.setattr(torch, "load", recording_load)
-
-    loaded_names = load_brainvlm_checkpoint(model, checkpoint)
-
-    assert loaded_names == tuple(sorted(state))
-    assert observed["weights_only"] is True
-    assert observed["map_location"] == "cpu"
-    assert all(torch.equal(value, torch.full_like(value, 2.0)) for value in model.state_dict().values())
-
-
-@pytest.mark.parametrize(
-    ("state", "message"),
-    [
-        ({"unknown": torch.ones(1)}, "unrecognized"),
-        ({"projection.weight": torch.ones(3, 3)}, "shape"),
-        ({"projection.weight": torch.full((2, 2), float("nan"))}, "finite"),
-        ({}, "empty"),
-    ],
-)
-def test_checkpoint_loader_rejects_incompatible_state(
-    tmp_path: Path,
-    state: dict[str, torch.Tensor],
-    message: str,
-) -> None:
-    checkpoint = tmp_path / "model.pth"
-    _save_model_checkpoint(checkpoint, state)
-
-    with pytest.raises(BrainVlmRuntimeError, match=message):
-        load_brainvlm_checkpoint(TinyCheckpointModel(), checkpoint)
+    assert runtime.model is model
+    assert observed["model"] is model
+    assert observed["checkpoint"] == checkpoint.resolve()
+    assert observed["assets"].llama_model == llama.resolve()
+    assert observed["assets"].biomedclip_pretrained == str(biomedclip.resolve())
 
 
-class FakeTokenizer:
-    bos_token_id = 1
-
-    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
-        del add_special_tokens
-        if text in {"1", "2", "3", "4", "5"}:
-            return [10 + int(text)]
-        return [2]
+def test_runtime_load_rejects_missing_foundation_assets(tmp_path: Path) -> None:
+    with pytest.raises(BrainVlmRuntimeError, match="llama"):
+        BrainVlmRuntime.load(tmp_path / "missing", tmp_path / "missing.pth")
 
 
-class FakeLanguageModel(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.anchor = nn.Parameter(torch.zeros(1))
-        self.lm_head = nn.Linear(4, 32, bias=False)
-        with torch.no_grad():
-            self.lm_head.weight.zero_()
-            for position, token_id in enumerate(range(11, 16)):
-                self.lm_head.weight[token_id, position % 4] = float(position + 1)
+def test_slice_features_are_from_one_forward_and_tumor_reuses_them(tmp_path: Path) -> None:
+    image = tmp_path / "slice.png"
+    _write_rgb(image)
+    model = FakeInternalModel()
+    runtime = BrainVlmRuntime.from_model(model)
 
-    def forward(self, **kwargs):
-        batch, sequence, _ = kwargs["inputs_embeds"].shape
-        hidden = torch.ones(batch, sequence, 4, device=kwargs["inputs_embeds"].device)
-        return SimpleNamespace(hidden_states=(hidden,))
+    features = runtime.predict_slice_features(image, _metadata(image))
+    logits = runtime.predict_tumor_logits(image, _metadata(image))
 
-
-class FakeProjectLanguageModel(FakeLanguageModel):
-    def forward(self, **kwargs):
-        batch, sequence, _ = kwargs["inputs_embeds"].shape
-        hidden = torch.ones(batch, sequence, 4, device=kwargs["inputs_embeds"].device)
-        return SimpleNamespace(hidden_states=hidden)
+    assert isinstance(features, SliceFeatures)
+    assert features.logits.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+    assert features.hidden.shape == (4096,)
+    assert logits.tolist() == features.logits.tolist()
+    assert len(model.feature_calls) == 2
+    assert model.feature_calls[0][2] == ("1", "2", "3", "4", "5")
+    assert model.feature_calls[0][0].shape == (1, 3, 224, 224)
 
 
-class FakeBrainVlmModel(nn.Module):
-    def __init__(self, generation: object = "<tumor_4> <grade_3>") -> None:
-        super().__init__()
-        self.llama_tokenizer = FakeTokenizer()
-        self.llama_model = FakeLanguageModel()
-        self.generation = generation
-        self.seen_images: list[torch.Tensor] = []
-        self.seen_prompts: list[str] = []
-        self.generation_calls: list[dict[str, object]] = []
+def test_slice_features_reject_incompatible_outputs(tmp_path: Path) -> None:
+    image = tmp_path / "slice.png"
+    _write_rgb(image)
+    model = FakeInternalModel()
+    model.extract_slice_features = lambda *args: (torch.ones(1, 4), torch.ones(1, 8))  # type: ignore[method-assign]
 
-    def encode_img(self, image: torch.Tensor, resolution_type: str):
-        assert resolution_type == "LR_Encoding"
-        self.seen_images.append(image.detach().cpu())
-        return torch.ones(1, 1, 4, device=image.device), torch.ones(1, 1, dtype=torch.long, device=image.device), None
-
-    def llama_proj_mlps(self, value: torch.Tensor) -> torch.Tensor:
-        return value
-
-    def prompt_wrap(self, image: torch.Tensor, attention: torch.Tensor, prompts: list[str]):
-        del image
-        self.seen_prompts.extend(prompts)
-        return (
-            torch.ones(1, 2, 4, device=attention.device),
-            torch.ones(1, 2, dtype=torch.long, device=attention.device),
-            torch.ones(1, 2, dtype=torch.long, device=attention.device),
-        )
-
-    def embed_tokens(self, token_ids: torch.Tensor) -> torch.Tensor:
-        return torch.ones(*token_ids.shape, 4, device=token_ids.device)
-
-    def maybe_autocast(self):
-        return torch.autocast(device_type="cpu", enabled=False)
-
-    def generate_step(self, images: torch.Tensor, prompts: str, hr_images, **kwargs):
-        self.seen_images.append(images.detach().cpu())
-        self.seen_prompts.append(prompts)
-        self.generation_calls.append({"hr_images": hr_images, **kwargs})
-        return self.generation
+    with pytest.raises(BrainVlmRuntimeError, match="invalid"):
+        BrainVlmRuntime.from_model(model).predict_slice_features(image, _metadata(image))
 
 
-def _write_rgb_image(path: Path) -> None:
-    Image.new("RGB", (224, 224), color=(0, 64, 128)).save(path)
+def test_who_generation_uses_historical_adult_prompt_and_greedy_arguments(tmp_path: Path) -> None:
+    image = tmp_path / "slice.png"
+    _write_rgb(image)
+    model = FakeInternalModel("  $<tumor_4> <grade_3>$  ")
+    runtime = BrainVlmRuntime.from_model(model)
 
-
-def _metadata(path: Path) -> InferenceSlice:
-    return InferenceSlice("patient-a", path, "T1", 2, 40.0)
-
-
-def test_tumor_inference_normalizes_image_and_returns_five_finite_logits(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.png"
-    _write_rgb_image(image_path)
-    model = FakeBrainVlmModel()
-    runtime = BrainVlmRuntime.from_model(model, device="cpu")
-
-    logits = runtime.predict_tumor_logits(image_path, _metadata(image_path))
-
-    assert logits.shape == (5,)
-    assert bool(torch.isfinite(logits).all())
-    assert logits.tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
-    observed = model.seen_images[0][0]
-    assert observed.shape == (3, 224, 224)
-    expected_corner = (torch.tensor([0.0, 64 / 255, 128 / 255]) - torch.tensor(BIOMEDCLIP_MEAN)) / torch.tensor(BIOMEDCLIP_STD)
-    torch.testing.assert_close(observed[:, 0, 0], expected_corner)
-    assert "USER:Please predict the WHO classification for this patient" in model.seen_prompts[0]
-    assert model.seen_prompts[0].endswith("ASSISTANT:<tumor_")
-
-
-def test_tumor_inference_accepts_project_hidden_state_contract(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.png"
-    _write_rgb_image(image_path)
-    model = FakeBrainVlmModel()
-    model.llama_model = FakeProjectLanguageModel()
-    runtime = BrainVlmRuntime.from_model(model, device="cpu")
-
-    logits = runtime.predict_tumor_logits(image_path, _metadata(image_path))
-
-    assert logits.tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
-
-
-def test_who_generation_is_greedy_and_deterministic(tmp_path: Path) -> None:
-    image_path = tmp_path / "slice.png"
-    _write_rgb_image(image_path)
-    model = FakeBrainVlmModel()
-    runtime = BrainVlmRuntime.from_model(model, device="cpu")
-
-    output = runtime.predict_who_generation(image_path, _metadata(image_path), "tumor_4", 40.0)
+    output = runtime.predict_who_generation(image, _metadata(image), "tumor_4", 53.0)
 
     assert output == "<tumor_4> <grade_3>"
-    assert "adult patient" in model.seen_prompts[0]
-    assert model.generation_calls == [
-        {"hr_images": None, "max_new_tokens": 50, "temperature": 0.0, "do_sample": False}
-    ]
+    call = model.generation_calls[0]
+    assert "This is a adult patient." in call["prompt"]
+    assert call["max_new_tokens"] == 50
+    assert call["temperature"] == 0.0
+    assert call["do_sample"] is False
+    assert call["high_resolution"] is None
 
 
-@pytest.mark.parametrize("generation", [None, "", [], ["<tumor_4> <grade_3>"]])
-def test_who_generation_rejects_empty_or_malformed_output(tmp_path: Path, generation: object) -> None:
-    image_path = tmp_path / "slice.png"
-    _write_rgb_image(image_path)
-    runtime = BrainVlmRuntime.from_model(FakeBrainVlmModel(generation), device="cpu")
+def test_runtime_rejects_bad_image_and_bad_generation(tmp_path: Path) -> None:
+    image = tmp_path / "slice.png"
+    image.write_text("not an image", encoding="ascii")
+    runtime = BrainVlmRuntime.from_model(FakeInternalModel())
+    with pytest.raises(BrainVlmRuntimeError, match="decode"):
+        runtime.predict_tumor_logits(image, _metadata(image))
 
-    with pytest.raises(BrainVlmRuntimeError, match="non-empty string"):
-        runtime.predict_who_generation(image_path, _metadata(image_path), "tumor_4", None)
+    _write_rgb(image)
+    runtime = BrainVlmRuntime.from_model(FakeInternalModel(""))
+    with pytest.raises(BrainVlmRuntimeError, match="text"):
+        runtime.predict_who_generation(image, _metadata(image), "tumor_4", 53.0)

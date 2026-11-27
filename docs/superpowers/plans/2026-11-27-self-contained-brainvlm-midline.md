@@ -245,17 +245,17 @@ git commit -m "feat: add checkpoint-compatible BrainVLM-Midline model"
 - Delete: `tests/test_brainvlm_bridge.py`
 - Delete: `tests/test_diagnostic_adapter.py`
 
-- [ ] **Step 1: Rewrite runtime tests against an internal factory**
+- [x] **Step 1: Rewrite runtime tests against an internal factory**
 
 Require `BrainVlmRuntime.load(llama_model, checkpoint, device, biomedclip_pretrained=None)` with no source root. Test `SliceFeatures(logits, hidden)`, one shared deterministic forward pass, exactly five class-token logits, 4096 hidden values, generation formatting, image decode errors, CUDA validation, and strict asset checks. Add a static test that forbids `sys.path` mutation and `minigpt4` imports in executable source.
 
-- [ ] **Step 2: Verify the rewritten tests fail**
+- [x] **Step 2: Verify the rewritten tests fail**
 
 Run: `pytest -q tests/test_brainvlm_runtime.py tests/diagnostic/test_slice_features.py`
 
 Expected: FAIL because the current runtime requires an external source.
 
-- [ ] **Step 3: Implement the internal runtime**
+- [x] **Step 3: Implement the internal runtime**
 
 Delete dynamic imports and source checkout validation. Construct `BrainVlmMidline` directly, load the strict trainable state, expose:
 
@@ -272,7 +272,7 @@ Keep `from_model()` for isolated contract tests.
 
 Delete the adapter implementation and bridge-specific tests. Update exports so callers can only use the internal runtime contract.
 
-- [ ] **Step 5: Run runtime and standalone service tests**
+- [x] **Step 5: Run runtime and standalone service tests**
 
 Run: `pytest -q tests/test_brainvlm_runtime.py tests/diagnostic/test_slice_features.py tests/test_standalone_diagnostic.py`
 

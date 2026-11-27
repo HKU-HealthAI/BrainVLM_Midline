@@ -112,6 +112,7 @@ tests/diagnostic/test_brainvlm_config.py
 tests/diagnostic/test_brainvlm_model.py
 tests/diagnostic/test_brainvlm_prompts.py
 tests/diagnostic/test_brainvlm_vision.py
+tests/diagnostic/test_slice_features.py
 tests/test_annotations.py
 tests/test_attention_mil.py
 tests/test_brainvlm_bridge.py
