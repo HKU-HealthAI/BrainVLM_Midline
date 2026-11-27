@@ -7,7 +7,9 @@ import argparse
 import ast
 import json
 import re
+import struct
 import subprocess
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -80,7 +82,7 @@ FORBIDDEN_PROGRAM_NAME = re.compile(
     re.IGNORECASE,
 )
 FORBIDDEN_ARTIFACT_NAME = re.compile(
-    r"(?:^|[_-])(?:prediction|result)(?:s)?(?:[_-]|$)",
+    r"(?:^|[_-])(?:checkpoint|prediction|result)(?:s)?(?:[_-]|$)",
     re.IGNORECASE,
 )
 GENERATED_FEATURE_ARTIFACT_NAME = re.compile(
@@ -109,7 +111,7 @@ PRIVATE_PATH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PRIVATE_SERVER_PATH_PATTERN = re.compile(
-    rf"/{'pro' + 'jects'}/[^\s'\"`]+",
+    rf"/(?:{'pro' + 'jects'}|{'m' + 'nt'})/[^\s'\"`]+",
     re.IGNORECASE,
 )
 URL_PATTERN = re.compile(r"https?://[^\s'\"`]+", re.IGNORECASE)
@@ -198,9 +200,11 @@ class CandidateSource:
     is_symlink: bool = False
 
 
-def _is_policy_content(path: Path) -> bool:
-    normalized = path.as_posix().lower()
-    return any(normalized.endswith(suffix) for suffix in POLICY_CONTENT_PATHS)
+def _is_policy_content(path: Path, root: Path | None) -> bool:
+    return any(
+        _matches_release_path(path, release_path, root)
+        for release_path in POLICY_CONTENT_PATHS
+    )
 
 
 def _has_forbidden_path(path: Path, root: Path | None = None) -> bool:
@@ -238,6 +242,137 @@ def _is_public_test_png_path(path: Path, root: Path | None) -> bool:
     except ValueError:
         return False
     return relative.parent == PUBLIC_TEST_IMAGE_DIRECTORY
+
+
+def _png_scanline_sizes(
+    width: int,
+    height: int,
+    bit_depth: int,
+    color_type: int,
+    interlace: int,
+) -> list[int] | None:
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+    valid_depths = {
+        0: {1, 2, 4, 8, 16},
+        2: {8, 16},
+        3: {1, 2, 4, 8},
+        4: {8, 16},
+        6: {8, 16},
+    }
+    if color_type not in channels or bit_depth not in valid_depths[color_type]:
+        return None
+    if interlace == 0:
+        passes = ((0, 0, 1, 1),)
+    elif interlace == 1:
+        passes = (
+            (0, 0, 8, 8),
+            (4, 0, 8, 8),
+            (0, 4, 4, 8),
+            (2, 0, 4, 4),
+            (0, 2, 2, 4),
+            (1, 0, 2, 2),
+            (0, 1, 1, 2),
+        )
+    else:
+        return None
+
+    sizes: list[int] = []
+    bits_per_pixel = channels[color_type] * bit_depth
+    for x_start, y_start, x_step, y_step in passes:
+        pass_width = max(0, (width - x_start + x_step - 1) // x_step)
+        pass_height = max(0, (height - y_start + y_step - 1) // y_step)
+        if not pass_width or not pass_height:
+            continue
+        row_bytes = (pass_width * bits_per_pixel + 7) // 8
+        sizes.extend([row_bytes] * pass_height)
+    return sizes
+
+
+def _is_valid_png(raw_content: bytes) -> bool:
+    if not raw_content.startswith(PNG_SIGNATURE):
+        return False
+
+    offset = len(PNG_SIGNATURE)
+    header: tuple[int, int, int, int, int, int, int] | None = None
+    compressed = bytearray()
+    saw_image_data = False
+    image_data_closed = False
+    saw_palette = False
+    saw_end = False
+    chunk_index = 0
+    while offset < len(raw_content):
+        if len(raw_content) - offset < 12:
+            return False
+        length = struct.unpack(">I", raw_content[offset : offset + 4])[0]
+        chunk_type = raw_content[offset + 4 : offset + 8]
+        chunk_end = offset + 12 + length
+        if chunk_end > len(raw_content) or not re.fullmatch(rb"[A-Za-z]{4}", chunk_type):
+            return False
+        data = raw_content[offset + 8 : offset + 8 + length]
+        stored_crc = struct.unpack(">I", raw_content[offset + 8 + length : chunk_end])[0]
+        if zlib.crc32(chunk_type + data) & 0xFFFFFFFF != stored_crc:
+            return False
+        if chunk_index == 0 and chunk_type != b"IHDR":
+            return False
+        if chunk_type == b"IHDR":
+            if header is not None or length != 13:
+                return False
+            header = struct.unpack(">IIBBBBB", data)
+            width, height, _, _, compression, filter_method, _ = header
+            if not width or not height or compression != 0 or filter_method != 0:
+                return False
+        elif chunk_type == b"PLTE":
+            if saw_image_data or saw_palette or not length or length % 3 or length > 768:
+                return False
+            saw_palette = True
+        elif chunk_type == b"IDAT":
+            if header is None or image_data_closed:
+                return False
+            saw_image_data = True
+            compressed.extend(data)
+        elif chunk_type == b"IEND":
+            if length or not saw_image_data or chunk_end != len(raw_content):
+                return False
+            saw_end = True
+            offset = chunk_end
+            break
+        else:
+            if saw_image_data:
+                image_data_closed = True
+            if chunk_type[0] & 0x20 == 0:
+                return False
+        offset = chunk_end
+        chunk_index += 1
+
+    if header is None or not saw_end:
+        return False
+    width, height, bit_depth, color_type, _, _, interlace = header
+    if color_type == 3 and not saw_palette:
+        return False
+    scanline_sizes = _png_scanline_sizes(width, height, bit_depth, color_type, interlace)
+    if scanline_sizes is None:
+        return False
+    expected_size = sum(size + 1 for size in scanline_sizes)
+    if expected_size > 100_000_000:
+        return False
+    try:
+        decompressor = zlib.decompressobj()
+        decoded = decompressor.decompress(bytes(compressed), expected_size + 1)
+    except zlib.error:
+        return False
+    if (
+        len(decoded) != expected_size
+        or not decompressor.eof
+        or decompressor.unconsumed_tail
+        or decompressor.unused_data
+    ):
+        return False
+    decoded_offset = 0
+    for row_bytes in scanline_sizes:
+        if decoded[decoded_offset] > 4:
+            return False
+        decoded_offset += row_bytes + 1
+    return True
 
 
 def _is_credential_placeholder(raw_value: str) -> bool:
@@ -307,14 +442,43 @@ def _json_has_credential_literal(path: Path, content: str) -> bool:
     return visit(parsed)
 
 
-def _python_literal_value(node: ast.AST | None) -> object:
+def _python_literal_value(
+    node: ast.AST | None,
+    bindings: dict[str, ast.AST] | None = None,
+    seen: frozenset[str] = frozenset(),
+) -> object:
+    if isinstance(node, ast.Name) and bindings is not None and node.id in bindings:
+        if node.id in seen:
+            return NON_LITERAL
+        return _python_literal_value(bindings[node.id], bindings, seen | {node.id})
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left = _python_literal_value(node.left)
-        right = _python_literal_value(node.right)
+        left = _python_literal_value(node.left, bindings, seen)
+        right = _python_literal_value(node.right, bindings, seen)
         if isinstance(left, str) and isinstance(right, str):
             return left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value_node in node.values:
+            if isinstance(value_node, ast.FormattedValue):
+                value = _python_literal_value(value_node.value, bindings, seen)
+            else:
+                value = _python_literal_value(value_node, bindings, seen)
+            if value is NON_LITERAL:
+                return NON_LITERAL
+            parts.append(str(value))
+        return "".join(parts)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "str"
+        and len(node.args) == 1
+        and not node.keywords
+    ):
+        value = _python_literal_value(node.args[0], bindings, seen)
+        if value is not NON_LITERAL:
+            return str(value)
     return NON_LITERAL
 
 
@@ -344,6 +508,32 @@ def _python_import_aliases(tree: ast.AST) -> dict[str, str]:
     return aliases
 
 
+def _python_local_bindings(tree: ast.AST, aliases: dict[str, str]) -> dict[str, ast.AST]:
+    bindings: dict[str, ast.AST] = {}
+    ordered_nodes = sorted(
+        ast.walk(tree),
+        key=lambda node: (
+            getattr(node, "lineno", -1),
+            getattr(node, "col_offset", -1),
+        ),
+    )
+    for node in ordered_nodes:
+        if isinstance(node, ast.Assign):
+            assignments = [(target, node.value) for target in node.targets]
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            assignments = [(node.target, node.value)]
+        else:
+            continue
+        for target, value in assignments:
+            if not isinstance(target, ast.Name):
+                continue
+            bindings[target.id] = value
+            qualified_value = _python_qualified_name(value, aliases)
+            if qualified_value is not None and qualified_value != target.id:
+                aliases[target.id] = qualified_value
+    return bindings
+
+
 def _python_qualified_name(node: ast.AST | None, aliases: dict[str, str]) -> str | None:
     if isinstance(node, ast.Name):
         return aliases.get(node.id, node.id)
@@ -361,20 +551,29 @@ def _python_qualified_name(node: ast.AST | None, aliases: dict[str, str]) -> str
     return None
 
 
-def _python_string_values(node: ast.AST) -> list[str]:
-    children = sorted(
-        ast.walk(node),
-        key=lambda child: (
-            getattr(child, "lineno", -1),
-            getattr(child, "col_offset", -1),
-            getattr(child, "end_col_offset", -1),
-        ),
-    )
+def _python_bound_nodes(
+    node: ast.AST,
+    bindings: dict[str, ast.AST],
+    seen: frozenset[str] = frozenset(),
+) -> Iterable[ast.AST]:
+    yield node
+    if isinstance(node, ast.Name) and node.id in bindings and node.id not in seen:
+        yield from _python_bound_nodes(bindings[node.id], bindings, seen | {node.id})
+        return
+    for child in ast.iter_child_nodes(node):
+        yield from _python_bound_nodes(child, bindings, seen)
+
+
+def _python_string_values(
+    node: ast.AST,
+    bindings: dict[str, ast.AST] | None = None,
+) -> list[str]:
+    children = list(_python_bound_nodes(node, bindings or {}))
     values = [child.value for child in children if isinstance(child, ast.Constant) and isinstance(child.value, str)]
     for child in children:
         if isinstance(child, ast.Constant):
             continue
-        value = _python_literal_value(child)
+        value = _python_literal_value(child, bindings)
         if isinstance(value, str) and value not in values:
             values.append(value)
     return values
@@ -388,10 +587,16 @@ def _python_target_is_removed_environment(node: ast.AST, aliases: dict[str, str]
     return owner in {"os.environ", "os.environb"} and key in REMOVED_ENVIRONMENT_NAMES
 
 
-def _python_mapping_has_removed_environment(node: ast.AST) -> bool:
-    for child in ast.walk(node):
+def _python_mapping_has_removed_environment(
+    node: ast.AST,
+    bindings: dict[str, ast.AST],
+) -> bool:
+    for child in _python_bound_nodes(node, bindings):
         if isinstance(child, ast.Dict):
-            if any(_python_literal_value(key) in REMOVED_ENVIRONMENT_NAMES for key in child.keys):
+            if any(
+                _python_literal_value(key, bindings) in REMOVED_ENVIRONMENT_NAMES
+                for key in child.keys
+            ):
                 return True
         elif isinstance(child, ast.Call) and _python_qualified_name(child.func, {}) == "dict":
             if any(keyword.arg in REMOVED_ENVIRONMENT_NAMES for keyword in child.keywords):
@@ -415,6 +620,7 @@ def _python_policy_codes(content: str) -> set[str]:
         return set()
 
     aliases = _python_import_aliases(tree)
+    bindings = _python_local_bindings(tree, aliases)
     codes: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -479,7 +685,10 @@ def _python_policy_codes(content: str) -> set[str]:
             if node.args and _python_literal_value(node.args[0]) in REMOVED_ENVIRONMENT_NAMES:
                 codes.add("source-path-injection")
         if call_name in {"os.environ.update", "os.environb.update"}:
-            if any(value in REMOVED_ENVIRONMENT_NAMES for value in _python_string_values(node)):
+            if any(
+                value in REMOVED_ENVIRONMENT_NAMES
+                for value in _python_string_values(node, bindings)
+            ):
                 codes.add("source-path-injection")
 
         if call_name is not None and call_name.endswith(".add_argument"):
@@ -494,9 +703,11 @@ def _python_policy_codes(content: str) -> set[str]:
             "subprocess.run",
         }:
             for keyword in node.keywords:
-                if keyword.arg == "env" and _python_mapping_has_removed_environment(keyword.value):
+                if keyword.arg == "env" and _python_mapping_has_removed_environment(
+                    keyword.value, bindings
+                ):
                     codes.add("source-path-injection")
-            strings = _python_string_values(node)
+            strings = _python_string_values(node, bindings)
             compact = "".join(strings).lower()
             has_external_module = any(
                 re.search(r"(?:^|[.])train$", value.lower())
@@ -547,8 +758,11 @@ def _python_policy_codes(content: str) -> set[str]:
     return codes
 
 
-def _python_value_is_secret(node: ast.AST | None) -> bool:
-    value = _python_literal_value(node)
+def _python_value_is_secret(
+    node: ast.AST | None,
+    bindings: dict[str, ast.AST] | None = None,
+) -> bool:
+    value = _python_literal_value(node, bindings)
     if value is NON_LITERAL or value is None:
         return False
     return not isinstance(value, str) or not _is_credential_placeholder(value)
@@ -571,17 +785,20 @@ def _python_has_credential_literal(content: str) -> bool | None:
     except SyntaxError:
         return None
 
+    aliases = _python_import_aliases(tree)
+    bindings = _python_local_bindings(tree, aliases)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
             for key_node, value_node in zip(node.keys, node.values):
                 key = _python_literal_value(key_node)
                 if isinstance(key, str) and _is_credential_name(key):
-                    if _python_value_is_secret(value_node):
+                    if _python_value_is_secret(value_node, bindings):
                         return True
         if isinstance(node, ast.Call):
             for keyword in node.keywords:
                 if keyword.arg is not None and _is_credential_name(keyword.arg):
-                    if _python_value_is_secret(keyword.value):
+                    if _python_value_is_secret(keyword.value, bindings):
                         return True
         if isinstance(node, ast.Assign):
             pairs = [
@@ -595,7 +812,11 @@ def _python_has_credential_literal(content: str) -> bool | None:
             continue
         for target, value in pairs:
             name = _python_target_name(target)
-            if name is not None and _is_credential_name(name) and _python_value_is_secret(value):
+            if (
+                name is not None
+                and _is_credential_name(name)
+                and _python_value_is_secret(value, bindings)
+            ):
                 return True
     return False
 
@@ -728,7 +949,7 @@ def _content_violations(path: Path, content: str, root: Path | None) -> list[Vio
         violations.append(Violation(path, "custom-openai-endpoint", "custom OpenAI endpoint configuration detected"))
     if any(re.search(rf"\b{re.escape(name)}\b", lowered) for name in RELAY_SERVICE_NAMES):
         violations.append(Violation(path, "relay-service", "OpenAI relay service name detected"))
-    if not _is_policy_content(path) and re.search(r"\bbaseline\b", lowered):
+    if not _is_policy_content(path, root) and re.search(r"\bbaseline\b", lowered):
         violations.append(Violation(path, "prohibited-term", "prohibited release term detected"))
     details = {
         "custom-openai-endpoint": "custom OpenAI endpoint configuration detected",
@@ -777,7 +998,7 @@ def audit_paths(paths: Iterable[Path | CandidateSource], *, root: Path | None = 
         if path_is_forbidden and not public_test_png_path:
             violations.append(Violation(path, "forbidden-path", "forbidden file or directory"))
         if public_test_png_path:
-            if not raw_content.startswith(PNG_SIGNATURE):
+            if not _is_valid_png(raw_content):
                 violations.append(Violation(path, "binary-file", "attributed test image is not a valid PNG"))
             continue
         try:

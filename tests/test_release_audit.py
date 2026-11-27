@@ -1,6 +1,8 @@
 import json
+import struct
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,25 @@ from scripts.release_audit import audit_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_SCRIPT = PROJECT_ROOT / "scripts" / "release_audit.py"
+
+
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(data))
+        + chunk_type
+        + data
+        + struct.pack(">I", zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+    )
+
+
+def _valid_png_bytes() -> bytes:
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(b"\x00\x00"))
+        + _png_chunk(b"IEND", b"")
+    )
 
 
 def _codes(paths: list[Path]) -> set[str]:
@@ -219,6 +240,13 @@ def test_audit_rejects_singular_checkpoint_and_root_feature_artifacts(
     assert "forbidden-path" in _codes([artifact])
 
 
+def test_audit_rejects_root_checkpoint_json(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint.json"
+    checkpoint.write_text("{}\n", encoding="ascii")
+
+    assert _codes([checkpoint]) == {"forbidden-path"}
+
+
 @pytest.mark.parametrize(
     "relative_path",
     [
@@ -327,7 +355,7 @@ def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> N
 def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_path: Path) -> None:
     allowed = tmp_path / "test_data" / "utsw_glioma_bt0156" / "images" / "t1_001.png"
     allowed.parent.mkdir(parents=True)
-    allowed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"fixture")
+    allowed.write_bytes(_valid_png_bytes())
 
     assert audit_paths([allowed], root=tmp_path) == []
 
@@ -344,6 +372,14 @@ def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_pa
     disguised = allowed.with_name("disguised.png")
     disguised.write_bytes(b"not a png")
     assert {item.code for item in audit_paths([disguised], root=tmp_path)} == {"binary-file"}
+
+    forged = allowed.with_name("forged.png")
+    forged.write_bytes(b"\x89PNG\r\n\x1a\n" + b"not-valid-chunks")
+    assert {item.code for item in audit_paths([forged], root=tmp_path)} == {"binary-file"}
+
+    corrupt = allowed.with_name("corrupt.png")
+    corrupt.write_bytes(_valid_png_bytes()[:-1] + b"x")
+    assert {item.code for item in audit_paths([corrupt], root=tmp_path)} == {"binary-file"}
 
 
 @pytest.mark.parametrize("style", ["quoted", "dotenv", "yaml"])
@@ -549,6 +585,31 @@ def test_audit_rejects_python_foldable_credential_literal(tmp_path: Path) -> Non
     settings.write_text(f'{field_name} = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"\n', encoding="utf-8")
 
     assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    "wrapped_value",
+    [
+        'str("literal_abcdefghijklmnopqrstuvwxyz123456")',
+        'f"literal_abcdefghijklmnopqrstuvwxyz123456"',
+    ],
+)
+def test_audit_rejects_python_wrapped_credential_literals(
+    tmp_path: Path,
+    wrapped_value: str,
+) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    settings.write_text(f"{field_name} = {wrapped_value}\n", encoding="ascii")
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+def test_audit_keeps_vocabulary_token_wrapper_exemption(tmp_path: Path) -> None:
+    settings = tmp_path / "model_config.py"
+    settings.write_text('pad_token = str("$$")\n', encoding="ascii")
+
+    assert audit_paths([settings]) == []
 
 
 def test_audit_allows_empty_and_explicit_credential_placeholders(tmp_path: Path) -> None:
@@ -769,6 +830,16 @@ def test_audit_ast_rejects_aliased_and_obfuscated_sys_path_mutations(
     assert _codes([module]) == {"source-path-injection"}
 
 
+def test_audit_ast_rejects_locally_aliased_sys_path_mutation(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "import sys\nsearch_path = sys.path\nsearch_path.insert(0, external_source)\n",
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
 @pytest.mark.parametrize("variable", ["PYTHON" + "PATH", "BRAINVLM_" + "SOURCE", "BRAINVLM_SOURCE_" + "ROOT"])
 def test_audit_ast_rejects_removed_environment_injection(
     tmp_path: Path,
@@ -804,6 +875,19 @@ def test_audit_ast_rejects_removed_environment_in_subprocess_env(
     module.write_text(
         "import subprocess as process\n"
         f'process.{method}(["tool"], env={{"{source_root}": external_source}})\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_ast_rejects_bound_subprocess_environment_mapping(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    python_path = "PYTHON" + "PATH"
+    module.write_text(
+        "import subprocess\n"
+        f'env = {{"{python_path}": external_source}}\n'
+        'subprocess.run(["tool"], env=env)\n',
         encoding="ascii",
     )
 
@@ -917,6 +1001,30 @@ def test_audit_ast_rejects_external_training_delegation(
     assert _codes([command]) == {"external-training-delegation"}
 
 
+def test_audit_ast_rejects_bound_external_training_script(tmp_path: Path) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(
+        "import subprocess\n"
+        'training_script = external_project / "train.py"\n'
+        "subprocess.run([python, str(training_script)])\n",
+        encoding="ascii",
+    )
+
+    assert _codes([command]) == {"external-training-delegation"}
+
+
+def test_audit_ast_rejects_locally_aliased_dynamic_import(tmp_path: Path) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        "from importlib import import_module\n"
+        "load_external = import_module\n"
+        'load_external("external.model")\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"dynamic-import"}
+
+
 @pytest.mark.parametrize(
     "relative_path",
     [
@@ -1025,6 +1133,37 @@ def test_audit_rejects_private_projects_path_without_placeholder_false_positives
         encoding="ascii",
     )
     assert audit_paths([documentation]) == []
+
+
+def test_audit_rejects_private_mnt_path_without_url_false_positive(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    private_path = "/" + "mnt/private/model"
+    settings.write_text(f'MODEL_ROOT = "{private_path}"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+    documentation = tmp_path / "runtime.md"
+    documentation.write_text(
+        "#!/usr/bin/env bash\n"
+        "Use /path/to/model as a placeholder.\n"
+        "See https://example.invalid/mnt/public/model.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([documentation]) == []
+
+
+def test_audit_policy_fixture_exemption_is_exact_root_relative(tmp_path: Path) -> None:
+    fixture = tmp_path / "tests" / "test_release_audit.py"
+    fixture.parent.mkdir()
+    fixture.write_text("# baseline policy fixture\n", encoding="ascii")
+    assert audit_paths([fixture], root=tmp_path) == []
+
+    spoof = tmp_path / "archive" / "tests" / "test_release_audit.py"
+    spoof.parent.mkdir(parents=True)
+    spoof.write_text("# baseline user guidance\n", encoding="ascii")
+    assert {item.code for item in audit_paths([spoof], root=tmp_path)} == {
+        "prohibited-term"
+    }
 
 
 def test_audit_rejects_prohibited_term_outside_policy_files(tmp_path: Path) -> None:
