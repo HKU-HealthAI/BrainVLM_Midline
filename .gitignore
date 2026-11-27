@@ -3,6 +3,8 @@
 !/.env.example
 __pycache__/
 .pytest_cache/
+.venv/
+venv/
 *.py[cod]
 *.pth
 *.pt
@@ -13,6 +15,12 @@ __pycache__/
 /data/
 /outputs/
 /output/
+/results/
+/result/
+/predictions/
+/prediction/
+*_result.json
+*_prediction.json
 /logs/
 /cache/
 /checkpoints/

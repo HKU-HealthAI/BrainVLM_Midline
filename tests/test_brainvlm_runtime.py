@@ -1,4 +1,6 @@
+import sys
 from pathlib import Path
+from types import ModuleType
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +14,7 @@ from midline_agent.diagnostic.brainvlm_runtime import (
     BIOMEDCLIP_STD,
     BrainVlmRuntime,
     BrainVlmRuntimeError,
+    _construct_external_model,
     _validate_device,
     _validate_external_source,
     _validate_module_origins,
@@ -58,6 +61,38 @@ def test_module_origin_validation_rejects_another_checkout(tmp_path: Path) -> No
         _validate_module_origins(source, {"minigpt4": SimpleNamespace(__file__=outside_file)})
 
     _validate_module_origins(source, {"minigpt4": SimpleNamespace(__file__=package_file)})
+
+
+def test_external_model_construction_restores_preexisting_modules(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    package = source / "minigpt4"
+    models = package / "models"
+    models.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="ascii")
+    (models / "__init__.py").write_text("", encoding="ascii")
+    (models / "minigpt4.py").write_text(
+        "import torch\n"
+        "class MiniGPT4(torch.nn.Module):\n"
+        "    @classmethod\n"
+        "    def from_config(cls, config):\n"
+        "        return cls()\n",
+        encoding="ascii",
+    )
+    previous = ModuleType("minigpt4")
+    previous.__file__ = str(tmp_path / "previous" / "__init__.py")
+    original = sys.modules.get("minigpt4")
+    sys.modules["minigpt4"] = previous
+    try:
+        model = _construct_external_model(source, tmp_path / "llama", None)
+        assert isinstance(model, nn.Module)
+        assert sys.modules["minigpt4"] is previous
+        assert "minigpt4.models" not in sys.modules
+        assert "minigpt4.models.minigpt4" not in sys.modules
+    finally:
+        if original is None:
+            sys.modules.pop("minigpt4", None)
+        else:
+            sys.modules["minigpt4"] = original
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda", "cuda:-1", "cuda:abc", "cuda:2:1"])

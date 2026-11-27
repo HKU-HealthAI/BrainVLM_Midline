@@ -59,12 +59,23 @@ FORBIDDEN_PARTS = {
     "logs",
     "output",
     "outputs",
+    "prediction",
+    "predictions",
+    "result",
+    "results",
     "paper",
+    ".venv",
+    "venv",
 }
 FORBIDDEN_PROGRAM_NAME = re.compile(
     r"(?:^|[_-])(?:demo|eval|evaluate|evaluation|baseline)(?:[_-]|$)",
     re.IGNORECASE,
 )
+FORBIDDEN_ARTIFACT_NAME = re.compile(
+    r"(?:^|[_-])(?:prediction|result)(?:s)?(?:[_-]|$)",
+    re.IGNORECASE,
+)
+RESULT_ARTIFACT_SUFFIXES = {".csv", ".json", ".jsonl", ".tsv", ".xls", ".xlsx"}
 OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 PROVIDER_SECRET_PATTERNS = (
     re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
@@ -147,7 +158,9 @@ def _has_forbidden_path(path: Path, root: Path | None = None) -> bool:
         return True
     if normalized_parts & FORBIDDEN_PARTS:
         return True
-    return bool(FORBIDDEN_PROGRAM_NAME.search(path.stem))
+    if FORBIDDEN_PROGRAM_NAME.search(path.stem):
+        return True
+    return path.suffix.lower() in RESULT_ARTIFACT_SUFFIXES and bool(FORBIDDEN_ARTIFACT_NAME.search(path.stem))
 
 
 def _is_public_test_png_path(path: Path, root: Path | None) -> bool:

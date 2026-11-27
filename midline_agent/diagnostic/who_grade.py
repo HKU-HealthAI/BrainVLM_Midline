@@ -14,7 +14,7 @@ ALLOWED_GRADES = {
     "tumor_4": {"grade_2", "grade_3", "grade_4"},
     "tumor_5": {"grade_2", "grade_3"},
 }
-TOKEN_PATTERN = re.compile(r"<(tumor_[1-5])>\s*<(grade_[234])>")
+TOKEN_PATTERN = re.compile(r"<(tumor_[1-5])>[ \t]*<(grade_[234])>")
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class RejectedWhoVote:
 
 
 def parse_who_generation(raw_text: str) -> WhoGradeResult:
-    match = TOKEN_PATTERN.search(raw_text)
+    match = TOKEN_PATTERN.fullmatch(raw_text.strip())
     if not match:
         return WhoGradeResult(status="failed", reason="missing constrained tumor/grade tokens")
     tumor_type, grade = match.groups()

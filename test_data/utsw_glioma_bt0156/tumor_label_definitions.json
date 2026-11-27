@@ -1,7 +1,22 @@
 {
-  "tumor_1": "H3K27M-mutated midline glioma",
-  "tumor_2": "Pediatric-type diffuse glioma",
-  "tumor_3": "IDH-wildtype glioblastoma",
-  "tumor_4": "IDH-mutated astrocytoma",
-  "tumor_5": "IDH-mutated oligodendroglioma"
+  "tumor_1": {
+    "tumor_name": "Diffuse midline glioma, H3 K27-altered",
+    "checkpoint_class_description": "H3K27M-mutated midline glioma"
+  },
+  "tumor_2": {
+    "tumor_name": "Paediatric-type diffuse glioma (checkpoint superclass)",
+    "checkpoint_class_description": "Pediatric-type diffuse glioma"
+  },
+  "tumor_3": {
+    "tumor_name": "Glioblastoma, IDH-wildtype",
+    "checkpoint_class_description": "IDH-wildtype glioblastoma"
+  },
+  "tumor_4": {
+    "tumor_name": "Astrocytoma, IDH-mutant",
+    "checkpoint_class_description": "IDH-mutated astrocytoma"
+  },
+  "tumor_5": {
+    "tumor_name": "Oligodendroglioma, IDH-mutant and 1p/19q-codeleted",
+    "checkpoint_class_description": "IDH-mutated oligodendroglioma"
+  }
 }

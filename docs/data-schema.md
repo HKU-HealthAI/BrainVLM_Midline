@@ -64,6 +64,23 @@ logits to T1, T1CE, T2, and FLAIR order with five slices per modality before
 applying this checkpoint. It is distinct from the hidden-feature AttentionMIL
 training interface above.
 
+## Standalone diagnostic results
+
+Tumor and WHO-grade commands write schema version `1.2` JSON atomically. Both
+results contain the opaque `patient_id`, canonical `tumor_type`, current
+`tumor_name`, and the exact legacy `checkpoint_class_description`. The latter
+preserves the class text used to train the released checkpoint. `tumor_2` is a
+checkpoint superclass and is explicitly marked as such because it does not
+map one-to-one to one WHO entity. Current entity names follow the WHO
+Classification of Tumours, 5th edition.
+
+Tumor results additionally contain five logits and probabilities, slice and
+modality counts, preprocessing metadata, and SHA-256 digests for the BrainVLM
+and MIL checkpoints. WHO results contain the grade, method, strict vote counts,
+rejected and invalid vote counts, preprocessing metadata, and the WHO
+checkpoint digest when model voting is used. Generated text and filesystem
+paths are never persisted in either result.
+
 ## Case input and trace
 
 The integrated pipeline accepts a caller-owned case JSON containing an opaque

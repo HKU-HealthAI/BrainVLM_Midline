@@ -88,14 +88,16 @@ def test_tumor_service_calls_every_slice_and_returns_path_free_result(tmp_path: 
 
     assert len(runtime.calls) == 4
     assert result.tumor_type == "tumor_4"
-    assert result.tumor_name == "IDH-mutated astrocytoma"
+    assert result.tumor_name == "Astrocytoma, IDH-mutant"
+    assert result.checkpoint_class_description == "IDH-mutated astrocytoma"
     assert result.slice_count == 4
     assert result.modality_counts == {"T1": 1, "T1CE": 1, "T2": 1, "FLAIR": 1}
     assert result.aligned_slice_count == 20
     assert result.checkpoint_sha256 == {"brainvlm_midline": model_sha, "mil": mil_sha}
     assert abs(sum(result.probabilities) - 1.0) < 1e-6
-    assert payload["schema_version"] == "1.1"
-    assert payload["tumor_name"] == "IDH-mutated astrocytoma"
+    assert payload["schema_version"] == "1.2"
+    assert payload["tumor_name"] == "Astrocytoma, IDH-mutant"
+    assert payload["checkpoint_class_description"] == "IDH-mutated astrocytoma"
     assert str(tmp_path) not in str(payload)
 
 
@@ -115,8 +117,8 @@ def test_who_rules_do_not_construct_runtime(tmp_path: Path, tumor_type: str) -> 
     assert constructed == 0
     assert result.who_grade == "grade_4"
     assert result.tumor_name in {
-        "H3K27M-mutated midline glioma",
-        "IDH-wildtype glioblastoma",
+        "Diffuse midline glioma, H3 K27-altered",
+        "Glioblastoma, IDH-wildtype",
     }
     assert result.method == "fixed_rule"
     assert result.slice_count == 0
@@ -142,7 +144,9 @@ def test_who_service_strictly_votes_matching_generations(tmp_path: Path) -> None
     assert len(runtime.calls) == 4
     assert all(call[2:] == ("tumor_4", 52.0) for call in runtime.calls)
     assert result.who_grade == "grade_3"
-    assert result.tumor_name == "IDH-mutated astrocytoma"
+    assert result.tumor_name == "Astrocytoma, IDH-mutant"
+    assert payload["checkpoint_class_description"] == "IDH-mutated astrocytoma"
+    assert payload["schema_version"] == "1.2"
     assert result.method == "model_vote"
     assert result.vote_counts == {"grade_3": 2}
     assert result.rejected_vote_count == 1

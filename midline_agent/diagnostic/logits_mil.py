@@ -17,6 +17,15 @@ from midline_agent.datasets.inference_annotations import InferenceSlice
 TUMOR_TYPES = ("tumor_1", "tumor_2", "tumor_3", "tumor_4", "tumor_5")
 TUMOR_TYPE_NAMES = MappingProxyType(
     {
+        "tumor_1": "Diffuse midline glioma, H3 K27-altered",
+        "tumor_2": "Paediatric-type diffuse glioma (checkpoint superclass)",
+        "tumor_3": "Glioblastoma, IDH-wildtype",
+        "tumor_4": "Astrocytoma, IDH-mutant",
+        "tumor_5": "Oligodendroglioma, IDH-mutant and 1p/19q-codeleted",
+    }
+)
+CHECKPOINT_CLASS_DESCRIPTIONS = MappingProxyType(
+    {
         "tumor_1": "H3K27M-mutated midline glioma",
         "tumor_2": "Pediatric-type diffuse glioma",
         "tumor_3": "IDH-wildtype glioblastoma",

@@ -73,6 +73,8 @@ def _parse_age(raw_age: object, index: int) -> float | None:
     age = float(raw_age)
     if not math.isfinite(age):
         raise AnnotationError(f"record {index} age must be finite")
+    if age < 0:
+        raise AnnotationError(f"record {index} age must be non-negative")
     return age
 
 
@@ -84,11 +86,15 @@ def load_inference_case(annotation_path: Path, image_root: Path) -> InferenceCas
     patient_ids: set[str] = set()
     ages: set[float] = set()
     required = {"patient_id", "image_path", "modality", "slice_index"}
+    allowed = required | {"age"}
 
     for index, value in enumerate(_load_records(Path(annotation_path))):
         missing = required - value.keys()
         if missing:
             raise AnnotationError(f"record {index} missing fields: {', '.join(sorted(missing))}")
+        unexpected = value.keys() - allowed
+        if unexpected:
+            raise AnnotationError(f"record {index} has unexpected fields: {', '.join(sorted(unexpected))}")
         patient_id = value["patient_id"]
         if not isinstance(patient_id, str) or not patient_id.strip():
             raise AnnotationError(f"record {index} patient_id must be a non-empty string")

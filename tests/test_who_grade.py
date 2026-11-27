@@ -3,10 +3,24 @@ from midline_agent.diagnostic.who_grade import (
     vote_who_grade,
     vote_who_grade_for_tumor,
 )
+import pytest
 
 
 def test_who_parser_rejects_invalid_tumor_grade_pair() -> None:
     assert parse_who_generation("<tumor_5> <grade_4>").status == "failed"
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "prose <tumor_4> <grade_3>",
+        "<tumor_4> <grade_3> trailing",
+        "<tumor_4> <grade_3> <tumor_4> <grade_2>",
+        "<tumor_4>\n<grade_3>",
+    ],
+)
+def test_who_parser_rejects_any_content_outside_one_constrained_pair(raw_text: str) -> None:
+    assert parse_who_generation(raw_text).status == "failed"
 
 
 def test_who_vote_breaks_tie_deterministically() -> None:

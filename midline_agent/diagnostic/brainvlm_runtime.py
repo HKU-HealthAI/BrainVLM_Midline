@@ -137,7 +137,8 @@ def load_brainvlm_checkpoint(model: torch.nn.Module, checkpoint_path: Path) -> t
     return tuple(sorted(checked_state))
 
 
-def _import_external_model_class(source_root: Path):
+@contextmanager
+def _external_model_class(source_root: Path) -> Iterator[type]:
     with _IMPORT_LOCK:
         previous_path = list(sys.path)
         previous_modules = {name: module for name, module in sys.modules.items() if name == "minigpt4" or name.startswith("minigpt4.")}
@@ -146,26 +147,27 @@ def _import_external_model_class(source_root: Path):
         try:
             sys.path.insert(0, str(source_root))
             importlib.invalidate_caches()
-            module = importlib.import_module("minigpt4.models.minigpt4")
-            loaded = {name: value for name, value in sys.modules.items() if name == "minigpt4" or name.startswith("minigpt4.")}
-            _validate_module_origins(source_root, loaded)
-            model_class = getattr(module, "MiniGPT4", None)
-            if model_class is None or not callable(getattr(model_class, "from_config", None)):
-                raise BrainVlmRuntimeError("external source does not expose MiniGPT4.from_config")
-            return model_class
-        except BrainVlmRuntimeError:
-            for name in list(sys.modules):
-                if name == "minigpt4" or name.startswith("minigpt4."):
-                    sys.modules.pop(name, None)
-            sys.modules.update(previous_modules)
-            raise
-        except Exception as exc:
-            for name in list(sys.modules):
-                if name == "minigpt4" or name.startswith("minigpt4."):
-                    sys.modules.pop(name, None)
-            sys.modules.update(previous_modules)
-            raise BrainVlmRuntimeError("unable to import the external BrainVLM source") from exc
+            try:
+                module = importlib.import_module("minigpt4.models.minigpt4")
+                loaded = {
+                    name: value
+                    for name, value in sys.modules.items()
+                    if name == "minigpt4" or name.startswith("minigpt4.")
+                }
+                _validate_module_origins(source_root, loaded)
+                model_class = getattr(module, "MiniGPT4", None)
+                if model_class is None or not callable(getattr(model_class, "from_config", None)):
+                    raise BrainVlmRuntimeError("external source does not expose MiniGPT4.from_config")
+            except BrainVlmRuntimeError:
+                raise
+            except Exception as exc:
+                raise BrainVlmRuntimeError("unable to import the external BrainVLM source") from exc
+            yield model_class
         finally:
+            for name in list(sys.modules):
+                if name == "minigpt4" or name.startswith("minigpt4."):
+                    sys.modules.pop(name, None)
+            sys.modules.update(previous_modules)
             sys.path[:] = previous_path
 
 
@@ -198,7 +200,6 @@ def _construct_external_model(
     llama_model: Path,
     biomedclip_pretrained: str | None,
 ) -> torch.nn.Module:
-    model_class = _import_external_model_class(source_root)
     config: dict[str, Any] = {
         "vit_model": "eva_clip_g",
         "q_former_model": "",
@@ -221,8 +222,9 @@ def _construct_external_model(
         "ckpt": "",
     }
     try:
-        with _biomedclip_override(biomedclip_pretrained):
-            model = model_class.from_config(config)
+        with _external_model_class(source_root) as model_class:
+            with _biomedclip_override(biomedclip_pretrained):
+                model = model_class.from_config(config)
     except BrainVlmRuntimeError:
         raise
     except Exception as exc:

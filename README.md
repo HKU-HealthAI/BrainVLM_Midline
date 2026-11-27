@@ -89,8 +89,10 @@ modification notice, and CC BY 4.0 terms are recorded in the case-level
 `ATTRIBUTION.md` and at https://doi.org/10.7937/DFAE-1B86. The label-free input
 file is `test_data/utsw_glioma_bt0156/annotations.json`. No generated
 prediction is bundled. The adjacent `tumor_label_definitions.json` records the
-formal tumor name represented by each checkpoint label without disclosing the
-case label.
+current WHO name and the original checkpoint class description for each model
+label without disclosing the case label. `tumor_2` is explicitly identified as
+a checkpoint superclass because it does not map one-to-one to a single WHO
+entity.
 
 For other cases, place de-identified PNG or JPEG slices beneath a caller-owned
 image root. The standalone inference reader supports the `T1`, `T1CE` (or
@@ -150,10 +152,15 @@ rule and the model checkpoint is not loaded. Other tumor classes use strict
 tumor-matched slice voting; mismatched and invalid model generations are
 counted rather than silently relabelled.
 
-The reference labels for BT0156 are `tumor_4` (IDH-mutated astrocytoma) and
-`grade_3`. These values are provided only as verification targets.
+The reference labels for BT0156 are `tumor_4` (Astrocytoma, IDH-mutant; the
+checkpoint description is IDH-mutated astrocytoma) and `grade_3`. These values
+are provided only as verification targets.
 No generated prediction is bundled in the repository. Both standalone result
-files record `tumor_type` and its corresponding formal `tumor_name`.
+files record `tumor_type`, the corresponding `tumor_name`, and the original
+`checkpoint_class_description`. Current entity names follow the WHO
+Classification of Tumours, 5th edition; the exact legacy checkpoint text is
+retained separately for reproducibility. See the official
+[IARC classification structure](https://whobluebooks.iarc.who.int/structures/central-nervous-system-tumours/).
 
 The same two stages can be submitted independently on Slurm. Create a
 caller-owned run directory first and pass its log path to `sbatch`; all other

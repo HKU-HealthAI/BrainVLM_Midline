@@ -4,17 +4,32 @@ from pathlib import Path
 from PIL import Image
 
 from midline_agent.datasets.inference_annotations import load_inference_case
-from midline_agent.diagnostic.logits_mil import TUMOR_TYPE_NAMES
+from midline_agent.diagnostic.logits_mil import CHECKPOINT_CLASS_DESCRIPTIONS, TUMOR_TYPE_NAMES
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CASE_ROOT = PROJECT_ROOT / "test_data" / "utsw_glioma_bt0156"
 EXPECTED_TUMOR_NAMES = {
-    "tumor_1": "H3K27M-mutated midline glioma",
-    "tumor_2": "Pediatric-type diffuse glioma",
-    "tumor_3": "IDH-wildtype glioblastoma",
-    "tumor_4": "IDH-mutated astrocytoma",
-    "tumor_5": "IDH-mutated oligodendroglioma",
+    "tumor_1": {
+        "tumor_name": "Diffuse midline glioma, H3 K27-altered",
+        "checkpoint_class_description": "H3K27M-mutated midline glioma",
+    },
+    "tumor_2": {
+        "tumor_name": "Paediatric-type diffuse glioma (checkpoint superclass)",
+        "checkpoint_class_description": "Pediatric-type diffuse glioma",
+    },
+    "tumor_3": {
+        "tumor_name": "Glioblastoma, IDH-wildtype",
+        "checkpoint_class_description": "IDH-wildtype glioblastoma",
+    },
+    "tumor_4": {
+        "tumor_name": "Astrocytoma, IDH-mutant",
+        "checkpoint_class_description": "IDH-mutated astrocytoma",
+    },
+    "tumor_5": {
+        "tumor_name": "Oligodendroglioma, IDH-mutant and 1p/19q-codeleted",
+        "checkpoint_class_description": "IDH-mutated oligodendroglioma",
+    },
 }
 
 
@@ -61,7 +76,10 @@ def test_public_case_records_checkpoint_tumor_class_names_without_patient_labels
     definitions = json.loads((CASE_ROOT / "tumor_label_definitions.json").read_text(encoding="utf-8"))
 
     assert definitions == EXPECTED_TUMOR_NAMES
-    assert definitions == dict(TUMOR_TYPE_NAMES)
+    assert {key: value["tumor_name"] for key, value in definitions.items()} == dict(TUMOR_TYPE_NAMES)
+    assert {key: value["checkpoint_class_description"] for key, value in definitions.items()} == dict(
+        CHECKPOINT_CLASS_DESCRIPTIONS
+    )
     assert "BT0156" not in json.dumps(definitions)
 
 

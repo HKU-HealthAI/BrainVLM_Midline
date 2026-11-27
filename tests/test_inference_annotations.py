@@ -139,6 +139,22 @@ def test_rejects_invalid_metadata(tmp_path: Path, field: str, value: object, mes
         load_inference_case(annotation_path, tmp_path)
 
 
+def test_rejects_negative_age_and_diagnostic_or_unknown_fields(tmp_path: Path) -> None:
+    _write_png(tmp_path / "image.png")
+    annotation_path = tmp_path / "annotations.json"
+
+    _write_annotations(annotation_path, [_record("image.png", age=-1)])
+    with pytest.raises(AnnotationError, match="non-negative"):
+        load_inference_case(annotation_path, tmp_path)
+
+    for forbidden_field in ("tumor_type", "who_grade", "prediction", "unknown"):
+        record = _record("image.png")
+        record[forbidden_field] = "not-allowed"
+        _write_annotations(annotation_path, [record])
+        with pytest.raises(AnnotationError, match="unexpected fields"):
+            load_inference_case(annotation_path, tmp_path)
+
+
 def test_rejects_empty_or_incomplete_annotations(tmp_path: Path) -> None:
     annotation_path = tmp_path / "annotations.json"
     _write_annotations(annotation_path, [])

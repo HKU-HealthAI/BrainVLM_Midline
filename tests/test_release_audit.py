@@ -177,6 +177,27 @@ def test_audit_rejects_non_release_source_paths(tmp_path: Path, relative_path: s
     assert "forbidden-path" in _codes([path])
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "results/tumor.json",
+        "result/tumor.json",
+        "predictions/tumor.json",
+        "prediction/tumor.json",
+        ".venv/config.txt",
+        "venv/config.txt",
+        "tumor_result.json",
+        "who_prediction.json",
+    ],
+)
+def test_audit_rejects_result_and_environment_artifacts(tmp_path: Path, relative_path: str) -> None:
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{}\n", encoding="utf-8")
+
+    assert "forbidden-path" in _codes([path])
+
+
 def test_audit_rejects_secret_checkpoint_private_path_and_symlink(tmp_path: Path) -> None:
     secret_file = tmp_path / ".env"
     checkpoint = tmp_path / "weights.safetensors"
