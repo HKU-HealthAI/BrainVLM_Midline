@@ -1,0 +1,27 @@
+include .env.example
+include .gitignore
+include LICENSE
+include MANIFEST.in
+include README.md
+include THIRD_PARTY_NOTICES.md
+include pyproject.toml
+include release-manifest.txt
+
+recursive-include configs *.yaml
+recursive-include docs *.md
+recursive-include licenses *.txt
+recursive-include midline_agent *.py
+recursive-include requirements *.txt
+recursive-include scripts *.py *.sh *.sbatch
+recursive-include test_data *.md *.json *.png
+recursive-include tests *.py *.json
+
+prune .pytest_cache
+prune .runtime
+prune build
+prune dist
+prune midline_agent.egg-info
+
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.bin *.ckpt *.onnx *.pt *.pth *.safetensors
