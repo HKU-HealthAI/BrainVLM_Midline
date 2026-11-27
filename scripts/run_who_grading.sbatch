@@ -9,6 +9,7 @@ set -euo pipefail
 
 : "${PROJECT_ROOT:?Set PROJECT_ROOT to the MidlineAgent repository}"
 : "${RUN_DIR:?Set RUN_DIR to a writable output directory}"
+: "${DEVICE:?Set DEVICE to an indexed CUDA device, for example cuda:0}"
 
 mkdir -p "$RUN_DIR"
 export TUMOR_RESULT="${TUMOR_RESULT:-$RUN_DIR/tumor_prediction.json}"

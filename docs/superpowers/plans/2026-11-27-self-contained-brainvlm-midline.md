@@ -427,25 +427,25 @@ git commit -m "feat: extract BrainVLM-Midline features internally"
 - Modify: `tests/test_launchers.py`
 - Modify: `tests/test_standalone_diagnostic.py`
 
-- [ ] **Step 1: Rewrite failing CLI tests**
+- [x] **Step 1: Rewrite failing CLI tests**
 
 Assert both commands accept Llama, optional local BiomedCLIP, checkpoint, indexed CUDA, input, and output assets; neither accepts a source root or model factory. Verify tumor calls the released `LogitsMilPredictor`, WHO reuses the shared runtime, fixed-grade rules skip checkpoint construction, and all public result metadata remains stable.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/test_cli_entrypoints.py tests/test_launchers.py tests/test_standalone_diagnostic.py`
 
 Expected: FAIL while external-source arguments remain.
 
-- [ ] **Step 3: Rewire commands and launchers**
+- [x] **Step 3: Rewire commands and launchers**
 
 Construct the internal runtime through one helper. Replace source variables with `LLAMA_MODEL`, optional `BIOMEDCLIP_PRETRAINED`, checkpoint variables, and `DEVICE`. Keep caller-owned output paths and Slurm logs outside the repository.
 
-- [ ] **Step 4: Run standalone tests**
+- [x] **Step 4: Run standalone tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit standalone inference**
+- [x] **Step 5: Commit standalone inference**
 
 ```bash
 git add scripts/predict_tumor.py scripts/predict_who_grade.py scripts/run_tumor_prediction.sh scripts/run_who_grading.sh scripts/run_tumor_prediction.sbatch scripts/run_who_grading.sbatch tests/test_cli_entrypoints.py tests/test_launchers.py tests/test_standalone_diagnostic.py

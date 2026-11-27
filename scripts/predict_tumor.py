@@ -6,19 +6,28 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from midline_agent.datasets.inference_annotations import load_inference_case
 from midline_agent.diagnostic.brainvlm_runtime import BrainVlmRuntime
 from midline_agent.diagnostic.logits_mil import LogitsMilPredictor
 from midline_agent.diagnostic.standalone import TumorPredictionService
+
+
+def _load_brainvlm_runtime(
+    llama_model: Path,
+    checkpoint: Path,
+    *,
+    device: str,
+    biomedclip_pretrained: str | None,
+) -> BrainVlmRuntime:
+    return BrainVlmRuntime.load(
+        llama_model,
+        checkpoint,
+        device=device,
+        biomedclip_pretrained=biomedclip_pretrained,
+    )
 
 
 def _write_json_atomic(output: Path, payload: dict[str, object]) -> None:
@@ -50,7 +59,6 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--annotations", type=Path, required=True, help="Label-free single-patient JSON")
     parser.add_argument("--image-root", type=Path, required=True, help="Root for annotation image paths")
-    parser.add_argument("--brainvlm-source", type=Path, required=True, help="External BrainVLM checkout")
     parser.add_argument("--llama-model", type=Path, required=True, help="Llama 3.1-8B Instruct directory")
     parser.add_argument("--checkpoint", type=Path, required=True, help="BrainVLM-Midline checkpoint")
     parser.add_argument("--mil-checkpoint", type=Path, required=True, help="Released learnable-logits MIL checkpoint")
@@ -66,8 +74,7 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     case = load_inference_case(args.annotations, args.image_root)
-    runtime = BrainVlmRuntime.load(
-        args.brainvlm_source,
+    runtime = _load_brainvlm_runtime(
         args.llama_model,
         args.checkpoint,
         device=args.device,

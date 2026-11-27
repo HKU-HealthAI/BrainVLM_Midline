@@ -85,6 +85,12 @@ file-header and license requirements before commit.
 | `midline_agent/diagnostic/brainvlm_midline/collate.py` | `3fafddb8b3a9a74dec005bd73e37d3bed2b734e1602dd94f87ff9afb8da0e974` | New strict task collator; MIT |
 | `midline_agent/diagnostic/brainvlm_midline/training.py` | `88b65ff70668d84f3f3cf6e5060d0fd1f68496e63e1fdef89913975c99069aa7` | Clean focused training implementation; MIT |
 | `scripts/train_brainvlm_midline.py` | `c21c069b6a01268ca7b028238588ad425f1ab66577e7e5ea839ea09c4034ab25` | New focused training command; MIT |
+| `scripts/predict_tumor.py` | `ad9bc821b944dba20527e1bb810bb67a9a9817bcecb6282a6eb396a411b7af4f` | Internal BrainVLM-Midline tumor command; MIT |
+| `scripts/predict_who_grade.py` | `db1e514fec5ff40275fef4327f268b8ef01faedf985a41cc73f4d827a48e8fb9` | Internal BrainVLM-Midline WHO grading command; MIT |
+| `scripts/run_tumor_prediction.sh` | `7972e31b476bf63c81d9de2234d8d656cdb774dd8303f9b98990267fd8013073` | Caller-configured tumor launcher; MIT |
+| `scripts/run_who_grading.sh` | `f5584fc9bb9b36031fa2ae647113d04b71671fa803086dbe86630a72336b4e4d` | Caller-configured WHO grading launcher; MIT |
+| `scripts/run_tumor_prediction.sbatch` | `e6be44fcf7007180104bc500e271e0bfbe159b73c13dc8d38b6ee68e48588c41` | Caller-owned Slurm tumor launcher; MIT |
+| `scripts/run_who_grading.sbatch` | `a4642373c6a397d41ecb03a39fa047c776663fae7d2c01743d2bc7268778f500` | Caller-owned Slurm WHO grading launcher; MIT |
 
 ## License Files
 
