@@ -27,18 +27,19 @@ validated handoffs and report synthesis.
 
 ## Release boundary
 
-This repository contains code and configuration templates only. It does not
-contain patient data, annotation records, extracted features, model
-checkpoints, API credentials, reports, evaluation outputs, or comparison-model
-implementations. BrainVLM source and all project checkpoints are distributed
-separately.
+This repository contains source code, configuration templates, and one
+attributed public test case comprising 30 selected 2D MRI slices. It does not
+contain diagnostic labels for that case, extracted features, model
+checkpoints, API credentials, generated reports, prediction outputs, or
+comparison-model implementations. BrainVLM source and all project checkpoints
+are distributed separately.
 
 This software is for research use. It is not a medical device and must not be
 used to make autonomous diagnostic or treatment decisions.
 
 ## Installation
 
-Python 3.10 or newer is required. Install the complete public workflow with:
+Python 3.9 or newer is required. Install the complete public workflow with:
 
 ```bash
 python -m pip install -e ".[all]"
@@ -59,38 +60,50 @@ separately; model weights are not stored in this repository.
 | --- | --- | --- | --- |
 | Llama 3.1-8B Instruct | Language-model backbone used by BrainVLM | [Hugging Face](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) | Configure in the external BrainVLM checkout as described by the [BrainVLM project](https://github.com/HKU-HealthAI/BrainVLM). |
 | BiomedCLIP | Vision encoder used by BrainVLM | [Hugging Face](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224) | Loaded by the external BrainVLM implementation. |
-| BrainVLM-Midline | Midline glioma diagnosis and slice-feature extraction | [Google Drive](https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link) | Pass to the external adapter with `--checkpoint`. |
-| WHO Grading | Tumor-conditioned WHO-grade prediction | [Google Drive](https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link) | Use with a compatible external BrainVLM adapter or the original WHO-grade evaluation pipeline. The public CLI does not expose a separate WHO-checkpoint argument. |
-| MIL | Patient-level aggregation of slice predictions | [Google Drive](https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link) | Supply through `--attention-mil-checkpoint`; the artifact must satisfy the public checkpoint contract in `docs/data-schema.md`. |
+| BrainVLM-Midline | Five-class slice inference for midline tumors | [Google Drive](https://drive.google.com/file/d/168Bp-JgH9CheV9QYj0MLoolSG_ONFuDD/view?usp=drive_link) | Set `TUMOR_CHECKPOINT` or pass `--checkpoint` to `midline-predict-tumor`. |
+| WHO Grading | Tumor-conditioned WHO-grade prediction | [Google Drive](https://drive.google.com/file/d/1eWBI0DTWuwhQv5kErNfcDzMCmdSplwKL/view?usp=drive_link) | Set `WHO_CHECKPOINT` or pass `--checkpoint` to `midline-predict-who-grade`. |
+| MIL | Learnable-logits patient aggregation | [Google Drive](https://drive.google.com/file/d/15fch44MAuqOE4g4vuPegwAaFZn2EDk-M/view?usp=drive_link) | Set `MIL_CHECKPOINT` or pass `--mil-checkpoint` to `midline-predict-tumor`. |
 
 Access to Llama 3.1 and BiomedCLIP remains subject to their respective license
-and model-access terms. The external BrainVLM source checkout is also required
-for `--source-root` and must provide the adapter described in
-`docs/external-brainvlm-adapter.md`.
+and model-access terms. Clone the external source separately:
+
+```bash
+git clone https://github.com/HKU-HealthAI/BrainVLM.git /path/to/BrainVLM
+```
+
+The released checkpoint runtime receives this checkout through
+`--brainvlm-source`. It never copies the checkout or weights into MidlineAgent.
+The external environment must provide BrainVLM's own runtime dependencies,
+including `transformers`, `open_clip`, `peft`, and `omegaconf`.
 
 ## Prepare test data files
 
 The related BrainVLM project supports volumetric `.nii.gz` and `.npy` inputs.
-This repository instead operates on preselected 2D MRI slices and does not
-provide a 3D-to-2D conversion command. Convert or select slices externally
-before running the public workflow; no patient data or example cases are
-bundled here.
+This repository's checkpoint inference commands instead operate on preselected
+2D MRI slices and do not provide a 3D-to-2D conversion command.
 
-Place de-identified slice files beneath a caller-owned image root. Supported
-inputs are RGB PNG/JPEG files and two-dimensional NumPy arrays. The annotation
-reader supports the `T1`, `T1CE` (or `T1C`), `T2`, and `FLAIR` modality labels;
-the loader does not require every modality to be present. Pass the image root
-with `--image-root` and provide annotations as either a top-level JSON list or
-a JSONL file. Every annotation record requires:
+An attributed test case is included at `test_data/utsw_glioma_bt0323/`. It
+contains 30 selected axial PNG slices from subject BT0323 in the UTSW-Glioma
+collection: 6 T1, 11 T1CE, 6 T2, and 7 FLAIR slices. The source citation,
+modification notice, and CC BY 4.0 terms are recorded in the case-level
+`ATTRIBUTION.md` and at https://doi.org/10.7937/DFAE-1B86. The label-free input
+file is `test_data/utsw_glioma_bt0323/annotations.json`. No generated
+prediction is bundled.
+
+For other cases, place de-identified PNG or JPEG slices beneath a caller-owned
+image root. The standalone inference reader supports the `T1`, `T1CE` (or
+`T1C`), `T2`, and `FLAIR` modality labels. Every inference record requires:
 
 - `patient_id`: an opaque patient identifier;
 - `image_path`: a relative path that remains beneath `--image-root`;
-- `modality`: one of the supported modality labels;
-- `slice_index`: the integer slice position; and
-- `tumor_type`: one of `tumor_1` through `tumor_5`.
+- `modality`: one of the supported modality labels; and
+- `slice_index`: the integer slice position.
 
-All annotation records that share a `patient_id` must use the same
-`tumor_type`.
+An optional finite `age` value must be consistent across the patient. Labels
+such as `tumor_type` and `who_grade` are rejected by the standalone inference
+loader. Tumor prediction requires at least one slice from each of T1, T1CE,
+T2, and FLAIR so that the released MIL input can be aligned to five slices per
+modality.
 
 The case JSON passed through `--case-json` requires `case_id` and may contain
 `clinical_facts` and `mri_manifest`. The `case_id` must match a `patient_id` in
@@ -101,6 +114,62 @@ a JSON object and `mri_manifest` must be a JSON array of objects. Their values
 must be finite and JSON-compatible.
 
 ## Diagnostic Sub-Agent
+
+### Standalone released-checkpoint inference
+
+Set paths to the external dependencies and downloaded checkpoints. The
+BiomedCLIP override is optional when the BrainVLM checkout can resolve its
+configured pretrained asset itself.
+
+```bash
+export ANNOTATIONS="$PWD/test_data/utsw_glioma_bt0323/annotations.json"
+export IMAGE_ROOT="$PWD/test_data/utsw_glioma_bt0323"
+export BRAINVLM_SOURCE=/path/to/BrainVLM
+export LLAMA_MODEL=/path/to/Llama-3.1-8B-Instruct
+export BIOMEDCLIP_PRETRAINED=/path/to/biomedclip-pretrained.bin
+export TUMOR_CHECKPOINT=/path/to/brainvlm-midline.pth
+export MIL_CHECKPOINT=/path/to/mil.pth
+export WHO_CHECKPOINT=/path/to/who-grading.pth
+export DEVICE=cuda:0
+export OUTPUT_JSON=/path/to/run/tumor_prediction.json
+
+bash scripts/run_tumor_prediction.sh
+
+export TUMOR_RESULT="$OUTPUT_JSON"
+export OUTPUT_JSON=/path/to/run/who_grading.json
+bash scripts/run_who_grading.sh
+```
+
+The first command writes patient-level tumor logits, probabilities, modality
+counts, preprocessing metadata, and checkpoint SHA-256 digests. The second
+command validates the patient ID in the tumor result before WHO inference. For
+`tumor_1` and `tumor_3`, WHO grade is fixed to `grade_4` by the public clinical
+rule and the model checkpoint is not loaded. Other tumor classes use strict
+tumor-matched slice voting; mismatched and invalid model generations are
+counted rather than silently relabelled.
+
+The reference labels for BT0323 are `tumor_4` and `grade_3`. These values are
+provided only as verification targets. No generated prediction is bundled in
+the repository.
+
+The same two stages can be submitted independently on Slurm. Create a
+caller-owned run directory first and pass its log path to `sbatch`; all other
+exported variables above are inherited.
+
+```bash
+export PROJECT_ROOT="$PWD"
+export RUN_DIR=/path/to/run
+mkdir -p "$RUN_DIR/logs"
+
+sbatch --output="$RUN_DIR/logs/tumor-%j.log" scripts/run_tumor_prediction.sbatch
+# Submit the WHO stage after the tumor job completes successfully.
+sbatch --output="$RUN_DIR/logs/who-%j.log" scripts/run_who_grading.sbatch
+```
+
+Use `midline-predict-tumor --help` and `midline-predict-who-grade --help` for
+the equivalent direct CLI arguments.
+
+### Generic adapter and training interfaces
 
 The external BrainVLM integration uses a narrow factory contract and never
 copies the external source or checkpoint into this repository. See

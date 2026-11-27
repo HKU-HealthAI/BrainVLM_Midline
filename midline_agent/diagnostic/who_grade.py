@@ -25,6 +25,7 @@ class WhoGradeResult:
     reason: str = ""
     vote_counts: dict[str, int] | None = None
     rejected_votes: tuple["RejectedWhoVote", ...] = ()
+    invalid_vote_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -48,18 +49,31 @@ def parse_who_generation(raw_text: str) -> WhoGradeResult:
 def vote_who_grade(raw_predictions: list[str]) -> WhoGradeResult:
     parsed = [parse_who_generation(value) for value in raw_predictions]
     valid = [result for result in parsed if result.status == "completed" and result.grade is not None]
+    invalid_vote_count = len(parsed) - len(valid)
     if not valid:
-        return WhoGradeResult(status="failed", reason="no valid WHO-grade predictions", vote_counts={})
+        return WhoGradeResult(
+            status="failed",
+            reason="no valid WHO-grade predictions",
+            vote_counts={},
+            invalid_vote_count=invalid_vote_count,
+        )
     counts = Counter(result.grade for result in valid)
     grade = min((name for name, count in counts.items() if count == max(counts.values())), key=lambda name: int(name[-1]))
     tumor_type = min(result.tumor_type for result in valid if result.grade == grade)
-    return WhoGradeResult(status="completed", tumor_type=tumor_type, grade=grade, vote_counts=dict(sorted(counts.items())))
+    return WhoGradeResult(
+        status="completed",
+        tumor_type=tumor_type,
+        grade=grade,
+        vote_counts=dict(sorted(counts.items())),
+        invalid_vote_count=invalid_vote_count,
+    )
 
 
 def vote_who_grade_for_tumor(raw_predictions: list[str], tumor_type: str) -> WhoGradeResult:
     if tumor_type not in ALLOWED_GRADES:
         raise ValueError("unsupported tumor type for WHO-grade voting")
     parsed = [parse_who_generation(value) for value in raw_predictions]
+    invalid_vote_count = sum(result.status != "completed" for result in parsed)
     matching = [
         result
         for result in parsed
@@ -80,6 +94,7 @@ def vote_who_grade_for_tumor(raw_predictions: list[str], tumor_type: str) -> Who
             reason="no valid WHO-grade predictions for final tumor class",
             vote_counts={},
             rejected_votes=rejected,
+            invalid_vote_count=invalid_vote_count,
         )
     counts = Counter(result.grade for result in matching)
     grade = min(
@@ -92,4 +107,5 @@ def vote_who_grade_for_tumor(raw_predictions: list[str], tumor_type: str) -> Who
         grade=grade,
         vote_counts=dict(sorted(counts.items())),
         rejected_votes=rejected,
+        invalid_vote_count=invalid_vote_count,
     )

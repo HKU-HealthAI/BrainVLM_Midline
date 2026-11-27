@@ -17,4 +17,8 @@ __pycache__/
 /cache/
 /checkpoints/
 /paper/
-/docs/superpowers/
+/docs/superpowers/*
+!/docs/superpowers/specs/
+!/docs/superpowers/specs/*.md
+!/docs/superpowers/plans/
+!/docs/superpowers/plans/*.md

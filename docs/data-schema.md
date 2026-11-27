@@ -1,15 +1,33 @@
 # Data Schema
 
-The repository defines contracts but includes no data records or generated
-artifacts.
+The repository defines the following data contracts. It includes one
+attributed, label-free public inference case but no training records, model
+weights, extracted features, or generated predictions.
 
-## Annotation records
+## Label-free inference records
 
-The annotation reader accepts a caller-owned JSON array or JSONL file. Each
-record contains `patient_id`, an image path relative to a caller-provided image
-root, `modality`, `slice_index`, and `tumor_type`. Supported modalities are
-`T1`, `T1CE`, `T2`, and `FLAIR`. `who_grade`, `keyframe_label`, and
-`report_text` are task-dependent optional fields.
+Standalone checkpoint inference accepts a single top-level JSON list. Every
+record contains exactly `patient_id`, `image_path`, `modality`, `slice_index`,
+and optional `age`. Image paths are relative and must remain beneath the
+caller-provided image root. All records must describe one patient. Supported
+modalities are `T1`, `T1CE` (with `T1C` accepted as an alias), `T2`, and
+`FLAIR`; modality and slice-index pairs must be unique.
+
+The loader verifies each PNG or JPEG with Pillow before inference. Any `age`
+must be finite, non-negative, and consistent across records. Diagnostic fields
+including `tumor_type`, `who_grade`, generated text, logits, and probabilities
+are not accepted by the inference loader. Tumor inference subsequently
+requires every supported modality and deterministically aligns five slices per
+modality for the released 20-slice MIL input.
+
+## Training annotation records
+
+The training annotation reader accepts a caller-owned JSON array or JSONL file.
+Each record contains `patient_id`, an image path relative to a caller-provided
+image root, `modality`, `slice_index`, and `tumor_type`. These training labels
+are not accepted by the inference loader. Supported modalities are `T1`,
+`T1CE`, `T2`, and `FLAIR`. `who_grade`, `keyframe_label`, and `report_text` are
+task-dependent optional training fields.
 
 Supported image inputs are RGB PNG/JPEG files and two-dimensional NumPy arrays.
 Paths are resolved beneath the explicit image root. Missing labels required by
@@ -36,6 +54,15 @@ AttentionMIL checkpoints use the same bound safetensors-plus-JSON design. The
 sidecar records the exact model configuration, feature contract, modality map,
 split digests, best epoch, and validation loss. Loading is strict: unexpected,
 missing, non-finite, or shape-incompatible tensors are rejected.
+
+The separately distributed MIL artifact used by the released standalone tumor
+command is a compact learnable-logits checkpoint. It is loaded with PyTorch's
+`weights_only=True` mode and must contain `args.model_type = "logits"`,
+`args.aggregation = "learnable"`, a finite five-value `model.weights` tensor,
+and a finite positive scalar `model.temperature`. The command aligns the slice
+logits to T1, T1CE, T2, and FLAIR order with five slices per modality before
+applying this checkpoint. It is distinct from the hidden-feature AttentionMIL
+training interface above.
 
 ## Case input and trace
 

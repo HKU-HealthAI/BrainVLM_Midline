@@ -106,6 +106,8 @@ POLICY_CONTENT_PATHS = (
     "scripts/release_audit.py",
     "tests/test_release_audit.py",
 )
+PUBLIC_TEST_IMAGE_DIRECTORY = Path("test_data/utsw_glioma_bt0323/images")
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NON_LITERAL = object()
 
 
@@ -148,6 +150,16 @@ def _has_forbidden_path(path: Path, root: Path | None = None) -> bool:
     return bool(FORBIDDEN_PROGRAM_NAME.search(path.stem))
 
 
+def _is_public_test_png_path(path: Path, root: Path | None) -> bool:
+    if root is None or path.suffix.lower() != ".png":
+        return False
+    try:
+        relative = path.absolute().relative_to(root)
+    except ValueError:
+        return False
+    return relative.parent == PUBLIC_TEST_IMAGE_DIRECTORY
+
+
 def _is_credential_placeholder(raw_value: str) -> bool:
     value = raw_value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
@@ -177,6 +189,8 @@ def _is_credential_name(name: str) -> bool:
         if token
     ]
     sensitive_endings = {"token", "secret", "password", "credential", "credentials"}
+    if len(ordered_tokens) > 1 and ordered_tokens[0] in {"num", "number", "count"}:
+        return False
     if len(ordered_tokens) == 1 and ordered_tokens[0] in sensitive_endings:
         return True
     if len(ordered_tokens) > 1 and ordered_tokens[-1] in sensitive_endings:
@@ -318,17 +332,24 @@ def audit_paths(paths: Iterable[Path | CandidateSource], *, root: Path | None = 
         if source.is_symlink if source is not None else path.is_symlink():
             violations.append(Violation(path, "symlink", "symlinks are not allowed in a release candidate"))
             continue
-        forbidden_path = _has_forbidden_path(path, audit_root)
-        if forbidden_path:
-            violations.append(Violation(path, "forbidden-path", "forbidden file or directory"))
+        path_is_forbidden = _has_forbidden_path(path, audit_root)
         if source is None and not path.exists():
-            if not forbidden_path:
+            if path_is_forbidden:
+                violations.append(Violation(path, "forbidden-path", "forbidden file or directory"))
+            else:
                 violations.append(Violation(path, "missing-file", "candidate file does not exist"))
             continue
         if source is None and not path.is_file():
             violations.append(Violation(path, "non-file", "candidate entry is not a regular file"))
             continue
         raw_content = source.content if source is not None else path.read_bytes()
+        public_test_png_path = _is_public_test_png_path(path, audit_root)
+        if path_is_forbidden and not public_test_png_path:
+            violations.append(Violation(path, "forbidden-path", "forbidden file or directory"))
+        if public_test_png_path:
+            if not raw_content.startswith(PNG_SIGNATURE):
+                violations.append(Violation(path, "binary-file", "attributed test image is not a valid PNG"))
+            continue
         try:
             content = raw_content.decode("utf-8")
         except UnicodeDecodeError:

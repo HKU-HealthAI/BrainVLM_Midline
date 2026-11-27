@@ -43,6 +43,21 @@ def test_manifest_mode_scans_only_listed_candidate_files(tmp_path: Path) -> None
     assert "Scanned 1 candidate file" in result.stdout
 
 
+def test_release_manifest_matches_all_tracked_files() -> None:
+    manifest = PROJECT_ROOT / "release-manifest.txt"
+    listed = [line for line in manifest.read_text(encoding="ascii").splitlines() if line]
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tracked = sorted(line for line in completed.stdout.splitlines() if line)
+
+    assert listed == tracked
+
+
 def test_manifest_mode_rejects_an_empty_manifest(tmp_path: Path) -> None:
     manifest = tmp_path / "release-manifest.txt"
     manifest.write_text("# No release files yet.\n", encoding="utf-8")
@@ -196,11 +211,43 @@ def test_audit_rejects_suffixed_env_files(tmp_path: Path, name: str) -> None:
     assert _codes([env_file]) == {"forbidden-path"}
 
 
+def test_audit_distinguishes_model_token_counts_from_credentials(tmp_path: Path) -> None:
+    model_config = tmp_path / "model_config.py"
+    model_config.write_text('CONFIG = {"num_query_token": 32}\n', encoding="utf-8")
+    credential = tmp_path / "credential.py"
+    credential.write_text('ACCESS_TOKEN = "not-a-placeholder"\n', encoding="utf-8")
+
+    assert audit_paths([model_config]) == []
+    assert _codes([credential]) == {"embedded-secret"}
+
+
 def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> None:
     artifact = tmp_path / "artifact.txt"
     artifact.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
 
     assert _codes([artifact]) == {"binary-file"}
+
+
+def test_audit_allows_only_valid_pngs_in_attributed_public_case_directory(tmp_path: Path) -> None:
+    allowed = tmp_path / "test_data" / "utsw_glioma_bt0323" / "images" / "t1_001.png"
+    allowed.parent.mkdir(parents=True)
+    allowed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"fixture")
+
+    assert audit_paths([allowed], root=tmp_path) == []
+
+    outside = tmp_path / "images" / "t1_001.png"
+    outside.parent.mkdir()
+    outside.write_bytes(allowed.read_bytes())
+    assert _codes([outside]) == {"binary-file", "forbidden-path"}
+
+    wrong_case = tmp_path / "test_data" / "other_case" / "images" / "t1_001.png"
+    wrong_case.parent.mkdir(parents=True)
+    wrong_case.write_bytes(allowed.read_bytes())
+    assert _codes([wrong_case]) == {"binary-file", "forbidden-path"}
+
+    disguised = allowed.with_name("disguised.png")
+    disguised.write_bytes(b"not a png")
+    assert {item.code for item in audit_paths([disguised], root=tmp_path)} == {"binary-file"}
 
 
 @pytest.mark.parametrize("style", ["quoted", "dotenv", "yaml"])

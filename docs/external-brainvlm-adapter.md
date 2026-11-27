@@ -1,9 +1,33 @@
 # External BrainVLM Adapter
 
-The public package does not vendor BrainVLM source, model weights,
-patient data, or generated artifacts. Obtain a compatible external checkout
-and checkpoint through the project release channel, then pass both paths to
-`midline_agent.diagnostic.brainvlm_adapter.BrainVlmAdapter`.
+The public package does not vendor BrainVLM source, model weights, or generated
+artifacts. Obtain a compatible external checkout and checkpoint through the
+project release channel. The concrete runtime for the released checkpoints is
+described first; the generic factory contract remains available for custom
+integrations.
+
+## Concrete released-checkpoint bridge
+
+`midline_agent.diagnostic.brainvlm_runtime.BrainVlmRuntime` loads the released
+BrainVLM-Midline and WHO Grading artifacts against an external BrainVLM
+checkout. Its `load` method requires the source checkout, a local Llama
+3.1-8B Instruct directory, a project checkpoint, and an indexed CUDA device.
+A caller may also override the BiomedCLIP pretrained location used while the
+external model is constructed.
+
+The runtime uses deterministic bicubic image resizing followed by the
+BiomedCLIP mean and standard deviation. Tumor inference reads the five
+single-token logits after the fixed `<tumor_` prefix. WHO inference uses greedy
+generation with a fixed public prompt. Checkpoints are opened with
+`weights_only=True`; unknown tensors, incompatible shapes, and non-finite
+values are errors. The runtime never substitutes an image, logit vector, tumor
+class, or grade after a failure.
+
+## Generic factory contract
+
+Pass an external source and checkpoint to
+`midline_agent.diagnostic.brainvlm_adapter.BrainVlmAdapter` when supplying a
+custom factory.
 
 The constructor contract is:
 

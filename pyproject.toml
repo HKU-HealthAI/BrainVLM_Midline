@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Research code for a traceable midline glioma decision-support workflow."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = []
 
 [project.optional-dependencies]
@@ -31,6 +31,8 @@ dev = ["pytest>=7.4"]
 [project.scripts]
 midline-extract-features = "scripts.extract_features:main"
 midline-train-attention-mil = "scripts.train_attention_mil:main"
+midline-predict-tumor = "scripts.predict_tumor:main"
+midline-predict-who-grade = "scripts.predict_who_grade:main"
 midline-run = "scripts.run_pipeline:main"
 
 [tool.pytest.ini_options]
