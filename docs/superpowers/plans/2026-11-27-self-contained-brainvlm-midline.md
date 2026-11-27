@@ -48,7 +48,7 @@ Obsolete external bridge files and documents are removed only after their replac
 - Inspect: `midline_agent/diagnostic/brainvlm_runtime.py`
 - Inspect: `midline_agent/diagnostic/logits_mil.py`
 
-- [ ] **Step 1: Write the private capture program**
+- [x] **Step 1: Write the private capture program**
 
 Write a temporary program outside the publication clone that loads the current external runtime and the authoritative tumor, WHO, and MIL checkpoints. It must process BT0156 in canonical annotation order and record:
 
@@ -74,15 +74,15 @@ metadata = {
 
 Use `safetensors.torch.save_file` for tensors and ASCII JSON for metadata. The temporary program and outputs must remain beneath the root repository's ignored `.runtime/runs` directory and must never be added to Git.
 
-- [ ] **Step 2: Submit the reference job**
+- [x] **Step 2: Submit the reference job**
 
 Run the capture program in the known working `MiniGPT-4` environment on one indexed CUDA device through Slurm. Expected: exit code 0 and both reference files exist.
 
-- [ ] **Step 3: Validate the reference envelope**
+- [x] **Step 3: Validate the reference envelope**
 
 Run a CPU validation script that asserts exact tensor shapes, finite values, 30 unique ordered slices, checkpoint hashes from the approved specification, `tumor_4`, and `grade_3`.
 
-- [ ] **Step 4: Record the reference location without committing artifacts**
+- [x] **Step 4: Record the reference location without committing artifacts**
 
 Add the absolute private reference location to the local implementation log only. Run `git status --short` in the publication clone and verify no reference file appears.
 
