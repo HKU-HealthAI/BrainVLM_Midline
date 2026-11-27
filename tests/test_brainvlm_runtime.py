@@ -149,6 +149,13 @@ class FakeLanguageModel(nn.Module):
         return SimpleNamespace(hidden_states=(hidden,))
 
 
+class FakeProjectLanguageModel(FakeLanguageModel):
+    def forward(self, **kwargs):
+        batch, sequence, _ = kwargs["inputs_embeds"].shape
+        hidden = torch.ones(batch, sequence, 4, device=kwargs["inputs_embeds"].device)
+        return SimpleNamespace(hidden_states=hidden)
+
+
 class FakeBrainVlmModel(nn.Module):
     def __init__(self, generation: object = "<tumor_4> <grade_3>") -> None:
         super().__init__()
@@ -213,6 +220,18 @@ def test_tumor_inference_normalizes_image_and_returns_five_finite_logits(tmp_pat
     expected_corner = (torch.tensor([0.0, 64 / 255, 128 / 255]) - torch.tensor(BIOMEDCLIP_MEAN)) / torch.tensor(BIOMEDCLIP_STD)
     torch.testing.assert_close(observed[:, 0, 0], expected_corner)
     assert model.seen_prompts[0].endswith("ASSISTANT:<tumor_")
+
+
+def test_tumor_inference_accepts_project_hidden_state_contract(tmp_path: Path) -> None:
+    image_path = tmp_path / "slice.png"
+    _write_rgb_image(image_path)
+    model = FakeBrainVlmModel()
+    model.llama_model = FakeProjectLanguageModel()
+    runtime = BrainVlmRuntime.from_model(model, device="cpu")
+
+    logits = runtime.predict_tumor_logits(image_path, _metadata(image_path))
+
+    assert logits.tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
 
 
 def test_who_generation_is_greedy_and_deterministic(tmp_path: Path) -> None:

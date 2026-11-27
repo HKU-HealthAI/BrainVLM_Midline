@@ -328,7 +328,15 @@ class BrainVlmRuntime:
                         return_dict=True,
                         use_cache=False,
                     )
-                hidden = outputs.hidden_states[-1][:, -1, :]
+                final_hidden = outputs.hidden_states[-1]
+                if not isinstance(final_hidden, torch.Tensor):
+                    raise BrainVlmRuntimeError("language model returned non-tensor hidden states")
+                if final_hidden.ndim == 3:
+                    hidden = final_hidden[:, -1, :]
+                elif final_hidden.ndim == 2:
+                    hidden = final_hidden[-1, :].unsqueeze(0)
+                else:
+                    raise BrainVlmRuntimeError("language model returned incompatible hidden states")
                 vocabulary_logits = self.model.llama_model.lm_head(hidden)[0]
                 if any(token_id < 0 or token_id >= vocabulary_logits.shape[0] for token_id in token_ids):
                     raise BrainVlmRuntimeError("tumor class token is outside the language-model vocabulary")
