@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import site
 import sys
 import sysconfig
@@ -14,6 +15,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+SHA256_FINGERPRINT_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 TRACE_PATH_ARGUMENTS = (
     "annotations",
     "image_root",
@@ -127,7 +129,9 @@ def _assert_trace_privacy(
     except (TypeError, json.JSONDecodeError) as exc:
         raise AssertionError("trace is not valid privacy-minimized JSON") from exc
     inspectable_strings = tuple(
-        value for value in trace_strings if not value.startswith("sha256:")
+        value
+        for value in trace_strings
+        if SHA256_FINGERPRINT_PATTERN.fullmatch(value) is None
     )
     forbidden = {"raw_generation", "https://", raw_case_id}
     for field in TRACE_PATH_ARGUMENTS:

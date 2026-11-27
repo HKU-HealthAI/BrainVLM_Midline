@@ -433,10 +433,69 @@ def test_installed_diagnostic_trace_privacy_rejects_raw_case_id_but_allows_hashe
             "BT0156",
         )
     acceptance._assert_trace_privacy(
-        '{"case_id": "sha256:dfdd0df7d995b51f"}',
+        json.dumps({"case_id": f"sha256:{'d' * 64}"}),
         args,
         "BT0156",
     )
+
+
+@pytest.mark.parametrize(
+    "malformed_fingerprint",
+    [
+        "sha256:BT0156",
+        f"sha256:{'A' * 64}:BT0156",
+        f"sha256:{'g' * 64}:BT0156",
+        f"sha256:{'a' * 32}:BT0156",
+        f"sha256:{'a' * 64}:BT0156",
+    ],
+)
+def test_installed_diagnostic_trace_privacy_inspects_malformed_fingerprints(
+    malformed_fingerprint: str,
+) -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    args = argparse.Namespace(
+        annotations=None,
+        image_root=None,
+        case_json=None,
+        llama_model=None,
+        biomedclip_pretrained=None,
+        tumor_checkpoint=None,
+        mil_checkpoint=None,
+        who_checkpoint=None,
+        output=None,
+    )
+
+    with pytest.raises(AssertionError, match="privacy-minimized"):
+        acceptance._assert_trace_privacy(
+            json.dumps({"case_id": malformed_fingerprint}),
+            args,
+            "BT0156",
+        )
+
+
+def test_installed_diagnostic_trace_privacy_inspects_path_prefixed_as_fingerprint() -> None:
+    from tests.acceptance import run_installed_diagnostic as acceptance
+
+    sensitive_image_root = Path("/private/images")
+    args = argparse.Namespace(
+        annotations=None,
+        image_root=sensitive_image_root,
+        case_json=None,
+        llama_model=None,
+        biomedclip_pretrained=None,
+        tumor_checkpoint=None,
+        mil_checkpoint=None,
+        who_checkpoint=None,
+        output=None,
+    )
+
+    with pytest.raises(AssertionError, match="privacy-minimized"):
+        acceptance._assert_trace_privacy(
+            json.dumps({"image_root": f"sha256:{sensitive_image_root}"}),
+            args,
+            "BT0156",
+        )
 
 
 def test_installed_diagnostic_trace_privacy_does_not_match_paths_inside_hashes() -> None:
@@ -455,7 +514,7 @@ def test_installed_diagnostic_trace_privacy_does_not_match_paths_inside_hashes()
     )
 
     acceptance._assert_trace_privacy(
-        '{"model_identifier": "sha256:deadbeef0123456789"}',
+        json.dumps({"model_identifier": f"sha256:dead{'0' * 60}"}),
         args,
         "BT0156",
     )
