@@ -109,7 +109,7 @@ git add docs/provenance/brainvlm-midline-sources.md licenses
 git commit -m "docs: record BrainVLM-Midline source provenance"
 ```
 
-- [ ] **Step 2: Write failing prompt and configuration tests**
+- [x] **Step 2: Write failing prompt and configuration tests**
 
 Cover exact tumor inference prompt suffix `ASSISTANT:<tumor_`, the three tumor training instructions, the four WHO instructions, child/adult age sentences, canonical token vocabularies, fixed-grade constraints, strict unknown-label rejection, local asset validation, indexed CUDA syntax, and immutable expected checkpoint key/shape metadata.
 
@@ -123,21 +123,21 @@ def test_age_context_uses_training_boundary():
     assert age_context(19) == "This is an adult patient. "
 ```
 
-- [ ] **Step 3: Run the tests and verify they fail**
+- [x] **Step 3: Run the tests and verify they fail**
 
 Run: `pytest -q tests/diagnostic/test_brainvlm_prompts.py tests/diagnostic/test_brainvlm_config.py`
 
 Expected: FAIL because the internal package does not exist.
 
-- [ ] **Step 4: Implement the focused constants and records**
+- [x] **Step 4: Implement the focused constants and records**
 
 Add frozen dataclasses for foundation assets, model settings, and training settings. Centralize prompt text and label conversions. Define the 146-entry checkpoint manifest from the authoritative checkpoint keys, without loading weight data into source.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 6: Recheck provenance and commit the package contract**
+- [x] **Step 6: Recheck provenance and commit the package contract**
 
 Compare every derived block actually added with the inventory. Update the modification statement and released-file digest. Stop before committing if any derived content is not covered by an established ownership/license record.
 
