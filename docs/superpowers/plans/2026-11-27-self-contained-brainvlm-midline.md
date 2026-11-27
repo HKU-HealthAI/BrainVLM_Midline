@@ -385,29 +385,29 @@ git commit -m "feat: add self-contained BrainVLM-Midline training"
 - Create: `tests/diagnostic/test_feature_extraction_cli.py`
 - Modify: `docs/data-schema.md`
 
-- [ ] **Step 1: Write failing feature-contract tests**
+- [x] **Step 1: Write failing feature-contract tests**
 
 Require `hidden_and_logits`, logit dimension 5, hidden dimension 4096, ordered slice identity, four-value modality map, checkpoint digest, prompt version, preprocessing version, and label-free/labeled modes. Label-free input must reject diagnostic labels; labeled mode must require one consistent canonical tumor label and store its integer class.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest -q tests/test_feature_store.py tests/diagnostic/test_feature_extraction_cli.py`
 
 Expected: FAIL because the current command uses a source root and adapter.
 
-- [ ] **Step 3: Rewrite the feature command**
+- [x] **Step 3: Rewrite the feature command**
 
 Accept `--annotations`, `--image-root`, `--llama-model`, optional `--biomedclip-pretrained`, `--checkpoint`, `--device`, `--output`, and `--labeled`. Construct `BrainVlmRuntime` directly and call `predict_slice_features()` once per slice.
 
-- [ ] **Step 4: Update feature schemas and documentation**
+- [x] **Step 4: Update feature schemas and documentation**
 
 Version the feature metadata and document how the same artifact feeds AttentionMIL and the Survival Sub-Agent without bundling generated features.
 
-- [ ] **Step 5: Run feature tests**
+- [x] **Step 5: Run feature tests**
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 6: Commit internal feature extraction**
+- [x] **Step 6: Commit internal feature extraction**
 
 ```bash
 git add midline_agent/diagnostic/feature_store.py scripts/extract_features.py tests/test_feature_store.py tests/diagnostic/test_feature_extraction_cli.py docs/data-schema.md

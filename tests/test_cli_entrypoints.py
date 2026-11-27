@@ -53,7 +53,7 @@ def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
 def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
     root = Path(__file__).resolve().parents[1]
     extraction = subprocess.run(
-        [sys.executable, "scripts/extract_features.py", "--help"],
+        [sys.executable, "-m", "scripts.extract_features", "--help"],
         cwd=root,
         capture_output=True,
         text=True,

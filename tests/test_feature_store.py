@@ -7,28 +7,44 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
 
+from midline_agent.datasets.brainvlm import PREPROCESSING_VERSION
+from midline_agent.datasets.prompts import PROMPT_VERSION
 from midline_agent.diagnostic.feature_store import FeatureSchemaError, load_feature_store, save_feature_store
 
 
 def _store(*, feature_kind: str = "logits") -> dict:
+    is_extraction_store = feature_kind == "hidden_and_logits"
     metadata = {
         "schema_version": "1.0",
         "feature_kind": feature_kind,
         "logit_dimension": 5 if "logits" in feature_kind else 0,
-        "hidden_dimension": 3 if "hidden" in feature_kind else 0,
-        "modality_map": {"T1": 0, "T2": 1},
+        "hidden_dimension": 4096 if is_extraction_store else (3 if "hidden" in feature_kind else 0),
+        "modality_map": {"T1": 0, "T1CE": 1, "T2": 2, "FLAIR": 3}
+        if is_extraction_store
+        else {"T1": 0, "T2": 1},
     }
+    if is_extraction_store:
+        metadata.update(
+            checkpoint_sha256="a" * 64,
+            prompt_version=PROMPT_VERSION,
+            preprocessing_version=PREPROCESSING_VERSION,
+        )
     patient = {
         "label": 0,
-        "slice_ids": ["s1", "s2"],
-        "modalities": [0, 1],
+        "slice_ids": ["patient-a:T1:1", "patient-a:T2:3"] if is_extraction_store else ["s1", "s2"],
+        "modalities": [0, 2] if is_extraction_store else [0, 1],
         "valid_mask": [True, True],
-        "slice_metadata": [{"modality": "T1"}, {"modality": "T2"}],
+        "slice_metadata": [
+            {"modality": "T1", "slice_index": 1, "checksum": "b" * 64},
+            {"modality": "T2", "slice_index": 3, "checksum": "c" * 64},
+        ]
+        if is_extraction_store
+        else [{"modality": "T1"}, {"modality": "T2"}],
     }
     if metadata["logit_dimension"]:
         patient["logits"] = torch.zeros(2, 5, dtype=torch.float32)
     if metadata["hidden_dimension"]:
-        patient["hidden"] = torch.ones(2, 3, dtype=torch.float32)
+        patient["hidden"] = torch.ones(2, metadata["hidden_dimension"], dtype=torch.float32)
     return {"metadata": metadata, "patients": {"patient-a": patient}}
 
 
@@ -42,13 +58,58 @@ def test_feature_store_round_trip_uses_safetensors_and_json(tmp_path: Path) -> N
     assert path.with_suffix(".json").is_file()
     assert set(load_file(path)) == {"patient.0.hidden", "patient.0.logits"}
     assert loaded["patients"]["patient-a"]["logits"].shape == (2, 5)
-    assert loaded["patients"]["patient-a"]["hidden"].shape == (2, 3)
+    assert loaded["patients"]["patient-a"]["hidden"].shape == (2, 4096)
     sidecar = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
     assert sidecar["format"] == "midline-agent-feature-store"
     assert sidecar["tensor_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     with safe_open(path, framework="pt", device="cpu") as artifact:
         assert artifact.metadata()["artifact_id"] == sidecar["artifact_id"]
     assert "logits" not in sidecar["patients"]["patient-a"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda store: store["metadata"].update(schema_version="1.1"), "schema"),
+        (lambda store: store["metadata"].update(feature_kind="hidden"), "hidden_and_logits"),
+        (lambda store: store["metadata"].update(logit_dimension=4), "logit_dimension"),
+        (lambda store: store["metadata"].update(hidden_dimension=3), "hidden_dimension"),
+        (lambda store: store["metadata"].update(modality_map={"T1": 0, "T2": 1}), "modality_map"),
+        (lambda store: store["metadata"].pop("checkpoint_sha256"), "checkpoint_sha256"),
+        (lambda store: store["metadata"].update(checkpoint_sha256="not-a-digest"), "checkpoint_sha256"),
+        (lambda store: store["metadata"].pop("prompt_version"), "prompt_version"),
+        (lambda store: store["metadata"].pop("preprocessing_version"), "preprocessing_version"),
+    ],
+)
+def test_extraction_contract_rejects_incompatible_metadata(tmp_path: Path, mutation, message: str) -> None:
+    store = _store(feature_kind="hidden_and_logits")
+    mutation(store)
+
+    with pytest.raises(FeatureSchemaError, match=message):
+        save_feature_store(tmp_path / "bad.safetensors", store)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda patient: patient["slice_ids"].reverse(), "ordered"),
+        (lambda patient: patient["modalities"].reverse(), "ordered"),
+        (lambda patient: patient["slice_metadata"].reverse(), "ordered"),
+        (lambda patient: patient["slice_ids"].__setitem__(0, "wrong-id"), "slice identity"),
+        (lambda patient: patient["slice_metadata"][0].update(checksum="bad"), "checksum"),
+        (lambda patient: patient["slice_metadata"][0].update(image_path="/absolute/slice.png"), "path"),
+        (lambda patient: patient["slice_metadata"][0].update(generation="private generation"), "generation"),
+        (lambda patient: patient.update(raw_generations=["private generation"]), "unexpected"),
+    ],
+)
+def test_extraction_contract_rejects_invalid_ordered_slice_identity(
+    tmp_path: Path, mutation, message: str
+) -> None:
+    store = _store(feature_kind="hidden_and_logits")
+    mutation(store["patients"]["patient-a"])
+
+    with pytest.raises(FeatureSchemaError, match=message):
+        save_feature_store(tmp_path / "bad.safetensors", store)
 
 
 @pytest.mark.parametrize(
