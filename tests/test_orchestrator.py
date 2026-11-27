@@ -4,9 +4,12 @@ from midline_agent.orchestrator import MidlineOrchestrator
 from midline_agent.schema import (
     CaseInput,
     DiagnosticResult,
+    EvidenceItem,
     StepStatus,
     SurvivalResult,
+    to_jsonable,
 )
+from midline_agent.treatment.providers import StaticEvidenceProvider
 
 
 class SuccessfulClient:
@@ -158,6 +161,38 @@ def test_orchestrator_requests_structured_handoff_before_treatment() -> None:
     assert len(client.requests) == 2
     assert client.requests[0].schema_name == "midline_handoff"
     assert client.requests[0].response_schema is not None
+
+
+def test_injected_treatment_evidence_is_retained_in_memory_but_minimized_in_trace() -> None:
+    source = EvidenceItem(
+        "opaque-source-1",
+        "similar_case",
+        excerpt="PRIVATE_EVIDENCE_SENTINEL",
+        url="https://private.invalid/source",
+        source_name="Deployment-owned source",
+        retrieval_status="verified",
+        applicability="Relevant to the supplied tumor context.",
+    )
+
+    class EvidenceClient(SuccessfulClient):
+        def generate(self, request):
+            response = super().generate(request)
+            if request.schema_name == "midline_treatment_report":
+                response.parsed["evidence"] = ["opaque-source-1"]
+            return response
+
+    state = MidlineOrchestrator(
+        EvidenceClient(),
+        diagnostic_workflow=lambda case: DiagnosticResult.unavailable("checkpoint unavailable"),
+        treatment_providers=(StaticEvidenceProvider("private", (source,)),),
+    ).run(CaseInput(case_id="opaque-case"))
+
+    assert state.treatment.status.state == "completed"
+    assert state.treatment.evidence == (source,)
+    assert "PRIVATE_EVIDENCE_SENTINEL" in state.treatment.evidence[0].excerpt
+    serialized_trace = str(to_jsonable(state.to_trace()))
+    assert "PRIVATE_EVIDENCE_SENTINEL" not in serialized_trace
+    assert "private.invalid" not in serialized_trace
 
 
 def test_orchestrator_returns_failed_partial_state_on_client_error() -> None:

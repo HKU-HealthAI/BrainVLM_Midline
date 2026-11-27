@@ -27,6 +27,21 @@ def test_pipeline_runner_exposes_no_custom_openai_endpoint() -> None:
     assert "--mock-diagnostic" not in source
 
 
+def test_pipeline_runner_does_not_discover_private_treatment_evidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, "scripts/run_pipeline.py", "--help"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "--internal-case-db" not in completed.stdout
+    assert "--private-evidence-root" not in completed.stdout
+    assert "--treatment-provider" not in completed.stdout
+
+
 def test_diagnostic_cli_entrypoints_require_explicit_inputs() -> None:
     root = Path(__file__).resolve().parents[1]
     extraction = subprocess.run(
