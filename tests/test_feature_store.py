@@ -67,11 +67,44 @@ def test_feature_store_round_trip_uses_safetensors_and_json(tmp_path: Path) -> N
     assert "logits" not in sidecar["patients"]["patient-a"]
 
 
+@pytest.mark.parametrize("feature_kind", ["logits", "hidden"])
+def test_legacy_single_kind_store_accepts_compatible_major_one_schema(
+    tmp_path: Path, feature_kind: str
+) -> None:
+    path = tmp_path / f"{feature_kind}.safetensors"
+    store = _store(feature_kind=feature_kind)
+    store["metadata"]["schema_version"] = "1.1"
+
+    save_feature_store(path, store)
+    loaded = load_feature_store(path)
+
+    assert loaded["metadata"]["schema_version"] == "1.1"
+    assert loaded["metadata"]["feature_kind"] == feature_kind
+
+
+@pytest.mark.parametrize("feature_kind", ["logits", "hidden"])
+def test_legacy_single_kind_store_accepts_benign_provenance_metadata(
+    tmp_path: Path, feature_kind: str
+) -> None:
+    path = tmp_path / f"{feature_kind}.safetensors"
+    store = _store(feature_kind=feature_kind)
+    store["metadata"].update(
+        checkpoint_sha256="d" * 64,
+        preprocessing_version="legacy-preprocessing-v2",
+    )
+
+    save_feature_store(path, store)
+    loaded = load_feature_store(path)
+
+    assert loaded["metadata"]["checkpoint_sha256"] == "d" * 64
+    assert loaded["metadata"]["preprocessing_version"] == "legacy-preprocessing-v2"
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
         (lambda store: store["metadata"].update(schema_version="1.1"), "schema"),
-        (lambda store: store["metadata"].update(feature_kind="hidden"), "hidden_and_logits"),
+        (lambda store: store["metadata"].update(feature_kind="hidden"), "feature_kind"),
         (lambda store: store["metadata"].update(logit_dimension=4), "logit_dimension"),
         (lambda store: store["metadata"].update(hidden_dimension=3), "hidden_dimension"),
         (lambda store: store["metadata"].update(modality_map={"T1": 0, "T2": 1}), "modality_map"),

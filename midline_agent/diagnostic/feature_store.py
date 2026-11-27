@@ -62,22 +62,15 @@ def _validate_metadata(metadata: Any) -> tuple[set[int], tuple[str, ...]]:
     missing = required - metadata.keys()
     if missing:
         raise FeatureSchemaError(f"metadata missing: {', '.join(sorted(missing))}")
-    if metadata["schema_version"] != "1.0":
-        raise FeatureSchemaError("unsupported feature schema version")
     kind = metadata["feature_kind"]
     if kind not in FEATURE_KINDS:
         raise FeatureSchemaError("unsupported feature_kind")
-    extraction_keys = EXTRACTION_METADATA_KEYS - {
-        "schema_version",
-        "feature_kind",
-        "logit_dimension",
-        "hidden_dimension",
-        "modality_map",
-        "prompt_version",
-    }
-    is_extraction = kind == "hidden_and_logits" or bool(extraction_keys & metadata.keys())
-    if is_extraction and kind != "hidden_and_logits":
-        raise FeatureSchemaError("extraction feature_kind must be hidden_and_logits")
+    is_extraction = kind == "hidden_and_logits"
+    if is_extraction:
+        if metadata["schema_version"] != "1.0":
+            raise FeatureSchemaError("unsupported extraction feature schema version")
+    elif str(metadata["schema_version"]).split(".", 1)[0] != "1":
+        raise FeatureSchemaError("unsupported feature schema major version")
     for key in ("logit_dimension", "hidden_dimension"):
         value = metadata[key]
         if type(value) is not int or value < 0:
