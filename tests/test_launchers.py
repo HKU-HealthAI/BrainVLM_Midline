@@ -250,3 +250,51 @@ def test_slurm_launcher_uses_caller_owned_run_directory(
     assert "#SBATCH --output" not in text
     assert "activate" not in text
     assert "source " not in text
+
+
+@pytest.mark.parametrize(
+    ("launcher", "shell_name"),
+    (
+        (SLURM_LAUNCHERS[0], "run_tumor_prediction.sh"),
+        (SLURM_LAUNCHERS[1], "run_who_grading.sh"),
+    ),
+)
+def test_slurm_launcher_replaces_invalid_inherited_tmpdir(
+    tmp_path: Path,
+    launcher: Path,
+    shell_name: str,
+) -> None:
+    project_root = tmp_path / "project"
+    scripts = project_root / "scripts"
+    scripts.mkdir(parents=True)
+    capture = tmp_path / "tmpdir.txt"
+    downstream = scripts / shell_name
+    downstream.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'test -d "$TMPDIR"\n'
+        'test -w "$TMPDIR"\n'
+        'printf \'%s\\n\' "$TMPDIR" > "$CAPTURE_PATH"\n',
+        encoding="ascii",
+    )
+    downstream.chmod(0o755)
+    run_dir = tmp_path / "run"
+
+    completed = subprocess.run(
+        ["bash", str(launcher)],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PROJECT_ROOT": str(project_root),
+            "RUN_DIR": str(run_dir),
+            "DEVICE": "cuda:0",
+            "CAPTURE_PATH": str(capture),
+            "TMPDIR": str(tmp_path / "missing-inherited-tmpdir"),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert capture.read_text(encoding="ascii").strip() == str(run_dir / "tmp")

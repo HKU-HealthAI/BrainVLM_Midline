@@ -12,6 +12,8 @@ set -euo pipefail
 : "${DEVICE:?Set DEVICE to an indexed CUDA device, for example cuda:0}"
 
 mkdir -p "$RUN_DIR"
+mkdir -p "$RUN_DIR/tmp"
+export TMPDIR="$RUN_DIR/tmp"
 export OUTPUT_JSON="${OUTPUT_JSON:-$RUN_DIR/tumor_prediction.json}"
 
 cd "$PROJECT_ROOT"
