@@ -7,6 +7,7 @@ configs/attention_mil.example.yaml
 configs/brainvlm_training.example.yaml
 docs/data-schema.md
 docs/external-brainvlm-adapter.md
+docs/provenance/brainvlm-midline-sources.md
 docs/superpowers/plans/2026-11-27-checkpoint-inference.md
 docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md
 docs/superpowers/plans/2026-11-27-treatment-private-evidence.md
@@ -15,6 +16,9 @@ docs/superpowers/specs/2026-11-27-self-contained-brainvlm-midline-design.md
 docs/superpowers/specs/2026-11-27-treatment-private-evidence-design.md
 docs/survival-agent.md
 docs/treatment-providers.md
+licenses/Apache-2.0.txt
+licenses/BSD-3-Clause-LAVIS.txt
+licenses/BSD-3-Clause-MiniGPT4.txt
 midline_agent/__init__.py
 midline_agent/datasets/__init__.py
 midline_agent/datasets/annotations.py

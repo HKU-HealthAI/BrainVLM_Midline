@@ -100,7 +100,7 @@ Add the absolute private reference location to the local implementation log only
 - Create: `licenses/Apache-2.0.txt`
 - Modify: `midline_agent/diagnostic/brainvlm_runtime.py`
 
-- [ ] **Step 1: Complete the pre-copy provenance and ownership gate**
+- [x] **Step 1: Complete the pre-copy provenance and ownership gate**
 
 Before creating or copying any derived implementation, record every planned derived release path, its exact local source path and SHA-256, identifiable upstream repository and immutable revision, modification statement, copyright holder, and license. Add the complete license texts needed by the planned extraction. If authorship, permission, or a compatible license cannot be established for a planned file or block, exclude it and reimplement only from documented behavior; do not commit uncertain derived code. Commit this gate before the first derived implementation:
 
