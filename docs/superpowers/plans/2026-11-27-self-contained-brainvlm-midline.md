@@ -546,31 +546,31 @@ git commit -m "docs: publish self-contained diagnostic runtime contract"
 - Modify: `tests/test_release_audit.py`
 - Modify: `release-manifest.txt`
 
-- [ ] **Step 1: Write failing policy tests**
+- [x] **Step 1: Write failing policy tests**
 
 Add fixtures that reject every non-ASCII byte in released text files, private absolute paths, credentials, generated results, unapproved binary weights/data, custom OpenAI endpoints, relay names, executable `minigpt4` imports, `sys.path`/`PYTHONPATH` source injection, dynamic model factories, removed source-root arguments/environment variables, and delegation to another project's training entrypoint. Binary formats are handled by the existing explicit allowlist (the attributed BT0156 PNG directory is the only data exception). Allow removed names only in the two approved policy/design documents where they appear as explicit prohibitions.
 
-- [ ] **Step 2: Verify policy-test failure**
+- [x] **Step 2: Verify policy-test failure**
 
 Run: `pytest -q tests/test_release_audit.py`
 
 Expected: FAIL until the new source-boundary rules are implemented.
 
-- [ ] **Step 3: Implement narrow source-boundary scanning**
+- [x] **Step 3: Implement narrow source-boundary scanning**
 
 Use AST inspection for imports, `sys.path` mutation, dynamic import calls, subprocess training delegation, and CLI options. Use text scanning only for configuration and shell variables. Keep exemptions path- and rule-specific.
 
-- [ ] **Step 4: Regenerate the manifest from tracked files**
+- [x] **Step 4: Regenerate the manifest from tracked files**
 
 Run: `git ls-files | LC_ALL=C sort > /tmp/midlineagent-release-manifest.txt`, then update `release-manifest.txt` through `apply_patch` so the manifest exactly matches the intended tracked release after staged deletions/additions.
 
-- [ ] **Step 5: Run the complete audit**
+- [x] **Step 5: Run the complete audit**
 
 Run: `python scripts/release_audit.py --tracked-only --root .`
 
 Expected: exit code 0 and no violations.
 
-- [ ] **Step 6: Commit release guards**
+- [x] **Step 6: Commit release guards**
 
 ```bash
 git add scripts/release_audit.py tests/test_release_audit.py release-manifest.txt

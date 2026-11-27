@@ -552,7 +552,7 @@ def test_audit_scans_text_even_when_its_path_is_forbidden(tmp_path: Path) -> Non
 def test_audit_rejects_custom_endpoint_configuration_and_relay_names(tmp_path: Path) -> None:
     endpoint_name = "OPENAI_BASE" + "_URL"
     argument_name = "base" + "_url"
-    relay_name = "open" + "router"
+    relay_name = "".join(("open", "router"))
     settings = tmp_path / "client.py"
     settings.write_text(
         f'{endpoint_name} = "https://relay.invalid/v1"\n'
@@ -562,6 +562,287 @@ def test_audit_rejects_custom_endpoint_configuration_and_relay_names(tmp_path: P
     )
 
     assert _codes([settings]) == {"custom-openai-endpoint", "relay-service"}
+
+
+def test_audit_rejects_every_non_ascii_text_byte(tmp_path: Path) -> None:
+    text_file = tmp_path / "notes.txt"
+    text_file.write_text("ASCII followed by " + chr(0x00E9) + "\n", encoding="utf-8")
+
+    assert _codes([text_file]) == {"non-ascii"}
+
+
+@pytest.mark.parametrize(
+    "private_path",
+    [
+        "/" + "userhome/account/project",
+        "/" + "home/account/project",
+        "/" + "Users/account/project",
+        "C:" + "\\Users\\account\\project",
+        "D:" + "/" + "Users/account/project",
+    ],
+)
+def test_audit_rejects_all_private_user_roots(tmp_path: Path, private_path: str) -> None:
+    settings = tmp_path / "settings.txt"
+    settings.write_text(f"model_path={private_path}\n", encoding="ascii")
+
+    assert _codes([settings]) == {"private-path"}
+
+
+def test_audit_rejects_tuple_assigned_credential_literals(tmp_path: Path) -> None:
+    settings = tmp_path / "settings.py"
+    field_name = "api" + "_key"
+    field_value = "literal_" + "abcdefghijklmnopqrstuvwxyz123456"
+    settings.write_text(
+        f'{field_name}, model_name = "{field_value}", "gpt-model"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([settings]) == {"embedded-secret"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "features/case.txt",
+        "feature/case.txt",
+        "reports/summary.txt",
+        "report/summary.txt",
+        "weights/model.txt",
+        "weight/model.txt",
+    ],
+)
+def test_audit_rejects_generated_feature_report_and_weight_trees(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    artifact = tmp_path / relative_path
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("generated\n", encoding="ascii")
+
+    assert _codes([artifact]) == {"forbidden-path"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'client = OpenAI(**{"base_" + "url": "https://relay.invalid/v1"})\n',
+        'setattr(openai, "api_" + "base", "https://relay.invalid/v1")\n',
+        'client = OpenAI("https://relay.invalid/v1")\n',
+    ],
+)
+def test_audit_ast_rejects_obfuscated_unofficial_openai_endpoints(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text(source, encoding="ascii")
+
+    assert _codes([settings]) == {"custom-openai-endpoint"}
+
+
+def test_audit_ast_rejects_folded_relay_names(tmp_path: Path) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text('provider = "open" + "router"\n', encoding="ascii")
+
+    assert _codes([settings]) == {"relay-service"}
+
+
+def test_audit_allows_official_openai_api_without_endpoint_override(tmp_path: Path) -> None:
+    settings = tmp_path / "client.py"
+    settings.write_text(
+        'client = OpenAI()\nofficial_documentation = "https://api.openai.com/v1"\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([settings]) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import " + "mini" + "gpt4.models as external_model\n",
+        "from " + "mini" + "gpt4.models import MiniGPT4\n",
+    ],
+)
+def test_audit_ast_rejects_executable_minigpt4_imports(tmp_path: Path, source: str) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"external-runtime-import"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'import importlib as loader\nloader.import_module("external.model")\n',
+        '__import__("external.model")\n',
+        (
+            "from importlib import util as loader\n"
+            'loader.spec_from_file_location("external", source_file)\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_dynamic_external_runtime_imports(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"dynamic-import"}
+
+
+def test_audit_allows_static_importlib_metadata_use(tmp_path: Path) -> None:
+    module = tmp_path / "version.py"
+    module.write_text(
+        'from importlib.metadata import version\nPACKAGE_VERSION = version("package")\n',
+        encoding="ascii",
+    )
+
+    assert audit_paths([module]) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "import sys as runtime\n"
+            "runtime." + "path[:0] = [str(external_source)]\n"
+        ),
+        (
+            "from sys import " + "path as search_path\n"
+            "search_path.append(str(external_source))\n"
+        ),
+        (
+            "import sys\n"
+            'getattr(sys, "pa" + "th").insert(0, str(external_source))\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_aliased_and_obfuscated_sys_path_mutations(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(source, encoding="ascii")
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+@pytest.mark.parametrize("variable", ["PYTHON" + "PATH", "BRAINVLM_" + "SOURCE", "BRAINVLM_SOURCE_" + "ROOT"])
+def test_audit_ast_rejects_removed_environment_injection(
+    tmp_path: Path,
+    variable: str,
+) -> None:
+    module = tmp_path / "runtime.py"
+    module.write_text(
+        f'import os\nos.environ["{variable}"] = str(external_source)\n',
+        encoding="ascii",
+    )
+
+    assert _codes([module]) == {"source-path-injection"}
+
+
+def test_audit_shell_scan_rejects_removed_environment_and_source_injection(
+    tmp_path: Path,
+) -> None:
+    launcher = tmp_path / "run.sh"
+    python_path = "PYTHON" + "PATH"
+    source_root = "BRAINVLM_SOURCE_" + "ROOT"
+    launcher.write_text(
+        f'export {python_path}="${{{source_root}}}:${{{python_path}}}"\n'
+        f'. "${{{source_root}}}/activate.sh"\n',
+        encoding="ascii",
+    )
+
+    assert _codes([launcher]) == {"removed-source-interface", "source-path-injection"}
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        "--" + "source-root",
+        "--" + "brainvlm-source",
+        "--" + "adapter",
+        "--" + "model-factory",
+    ],
+)
+def test_audit_ast_rejects_removed_cli_options(tmp_path: Path, option: str) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(
+        f'import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument("{option}")\n',
+        encoding="ascii",
+    )
+
+    assert _codes([command]) == {"removed-source-interface"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "from subprocess import run as launch\n"
+            'launch([python, str(external_project / "tra" + "in.py")])\n'
+        ),
+        (
+            "import subprocess as process\n"
+            'process.Popen((python, "-m", "other_project." + "train"))\n'
+        ),
+    ],
+)
+def test_audit_ast_rejects_external_training_delegation(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    command = tmp_path / "command.py"
+    command.write_text(source, encoding="ascii")
+
+    assert _codes([command]) == {"external-training-delegation"}
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md",
+        "docs/superpowers/specs/2026-11-27-self-contained-brainvlm-midline-design.md",
+    ],
+)
+def test_audit_allows_removed_names_only_in_approved_prohibition_text(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    policy = tmp_path / relative_path
+    policy.parent.mkdir(parents=True)
+    python_path = "PYTHON" + "PATH"
+    source_option = "--" + "source-root"
+    policy.write_text(
+        f"The release must not set {python_path} or expose {source_option}.\n",
+        encoding="ascii",
+    )
+    assert audit_paths([policy]) == []
+
+    policy.write_text(
+        f"Set {python_path}=/external and pass {source_option} to the command.\n",
+        encoding="ascii",
+    )
+    assert _codes([policy]) == {"removed-source-interface"}
+
+
+def test_audit_allows_legacy_source_paths_only_in_approved_provenance(
+    tmp_path: Path,
+) -> None:
+    provenance = tmp_path / "docs" / "provenance" / "brainvlm-midline-sources.md"
+    provenance.parent.mkdir(parents=True)
+    historical_path = "mini" + "gpt4/models/model.py"
+    provenance.write_text(f"Historical source: `{historical_path}`.\n", encoding="ascii")
+    assert audit_paths([provenance]) == []
+
+    provenance.write_text(f"Import and execute `{historical_path}`.\n", encoding="ascii")
+    assert _codes([provenance]) == {"external-runtime-import"}
+
+    instructions = tmp_path / "docs" / "runtime.md"
+    instructions.write_text(f"Install and import `{historical_path}`.\n", encoding="ascii")
+    assert _codes([instructions]) == {"external-runtime-import"}
 
 
 def test_audit_rejects_prohibited_term_outside_policy_files(tmp_path: Path) -> None:

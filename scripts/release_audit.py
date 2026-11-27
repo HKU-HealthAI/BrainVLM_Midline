@@ -11,6 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
 
 
 FORBIDDEN_NAMES = {".env", "id_rsa", "id_ed25519"}
@@ -56,13 +57,19 @@ FORBIDDEN_PARTS = {
     "evaluation",
     "evaluations",
     "examples",
+    "feature",
+    "features",
     "logs",
     "output",
     "outputs",
     "prediction",
     "predictions",
+    "report",
+    "reports",
     "result",
     "results",
+    "weight",
+    "weights",
     "paper",
     ".venv",
     "venv",
@@ -116,6 +123,44 @@ RELAY_SERVICE_NAMES = (
 POLICY_CONTENT_PATHS = (
     "scripts/release_audit.py",
     "tests/test_release_audit.py",
+)
+APPROVED_PROHIBITION_PATHS = (
+    "docs/superpowers/plans/2026-11-27-self-contained-brainvlm-midline.md",
+    "docs/superpowers/specs/2026-11-27-self-contained-brainvlm-midline-design.md",
+)
+APPROVED_DESIGN_PATH = APPROVED_PROHIBITION_PATHS[1]
+APPROVED_PROVENANCE_PATH = "docs/provenance/brainvlm-midline-sources.md"
+REMOVED_ENVIRONMENT_NAMES = (
+    "PYTHON" + "PATH",
+    "BRAINVLM_" + "SOURCE",
+    "BRAINVLM_SOURCE_" + "ROOT",
+)
+REMOVED_CLI_OPTIONS = (
+    "--" + "adapter",
+    "--" + "brainvlm-source",
+    "--" + "model-factory",
+    "--" + "source-root",
+)
+TEXT_INTERFACE_SUFFIXES = {".env", ".json", ".md", ".rst", ".sbatch", ".sh", ".toml", ".txt", ".yaml", ".yml"}
+SHELL_SUFFIXES = {".sbatch", ".sh"}
+LEGACY_RUNTIME_ROOT = "mini" + "gpt4"
+PROHIBITION_MARKERS = (
+    "absent",
+    "delete",
+    "do not",
+    "does not",
+    "excluded",
+    "forbid",
+    "must not",
+    "neither",
+    "no executable",
+    "not accept",
+    "not committed",
+    "reject",
+    "remove",
+    "scan",
+    "unset",
+    "without",
 )
 PUBLIC_TEST_IMAGE_DIRECTORY = Path("test_data/utsw_glioma_bt0156/images")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -251,6 +296,208 @@ def _python_literal_value(node: ast.AST | None) -> object:
     return NON_LITERAL
 
 
+def _python_assignment_pairs(target: ast.AST, value: ast.AST | None) -> list[tuple[ast.AST, ast.AST | None]]:
+    if isinstance(target, (ast.List, ast.Tuple)) and isinstance(value, (ast.List, ast.Tuple)):
+        if len(target.elts) == len(value.elts):
+            pairs: list[tuple[ast.AST, ast.AST | None]] = []
+            for nested_target, nested_value in zip(target.elts, value.elts):
+                pairs.extend(_python_assignment_pairs(nested_target, nested_value))
+            return pairs
+    return [(target, value)]
+
+
+def _python_import_aliases(tree: ast.AST) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for imported in node.names:
+                local_name = imported.asname or imported.name.split(".", maxsplit=1)[0]
+                aliases[local_name] = imported.name if imported.asname else local_name
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            for imported in node.names:
+                if imported.name == "*":
+                    continue
+                local_name = imported.asname or imported.name
+                aliases[local_name] = f"{node.module}.{imported.name}"
+    return aliases
+
+
+def _python_qualified_name(node: ast.AST | None, aliases: dict[str, str]) -> str | None:
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        owner = _python_qualified_name(node.value, aliases)
+        return f"{owner}.{node.attr}" if owner is not None else None
+    if isinstance(node, ast.Subscript):
+        return _python_qualified_name(node.value, aliases)
+    if isinstance(node, ast.Call) and _python_qualified_name(node.func, aliases) == "getattr":
+        if len(node.args) >= 2:
+            owner = _python_qualified_name(node.args[0], aliases)
+            attribute = _python_literal_value(node.args[1])
+            if owner is not None and isinstance(attribute, str):
+                return f"{owner}.{attribute}"
+    return None
+
+
+def _python_string_values(node: ast.AST) -> list[str]:
+    children = sorted(
+        ast.walk(node),
+        key=lambda child: (
+            getattr(child, "lineno", -1),
+            getattr(child, "col_offset", -1),
+            getattr(child, "end_col_offset", -1),
+        ),
+    )
+    values = [child.value for child in children if isinstance(child, ast.Constant) and isinstance(child.value, str)]
+    for child in children:
+        if isinstance(child, ast.Constant):
+            continue
+        value = _python_literal_value(child)
+        if isinstance(value, str) and value not in values:
+            values.append(value)
+    return values
+
+
+def _python_target_is_removed_environment(node: ast.AST, aliases: dict[str, str]) -> bool:
+    if not isinstance(node, ast.Subscript):
+        return False
+    owner = _python_qualified_name(node.value, aliases)
+    key = _python_literal_value(node.slice)
+    return owner in {"os.environ", "os.environb"} and key in REMOVED_ENVIRONMENT_NAMES
+
+
+def _is_unofficial_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme.lower() in {"http", "https"} and parsed.hostname not in {
+        "api.openai.com",
+        "openai.com",
+        "www.openai.com",
+    }
+
+
+def _python_policy_codes(content: str) -> set[str]:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return set()
+
+    aliases = _python_import_aliases(tree)
+    codes: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(imported.name.split(".", maxsplit=1)[0].lower() == LEGACY_RUNTIME_ROOT for imported in node.names):
+                codes.add("external-runtime-import")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.split(".", maxsplit=1)[0].lower() == LEGACY_RUNTIME_ROOT:
+                codes.add("external-runtime-import")
+
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                qualified_target = _python_qualified_name(target, aliases)
+                if qualified_target == "sys.path" or _python_target_is_removed_environment(target, aliases):
+                    codes.add("source-path-injection")
+
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = _python_qualified_name(node.func, aliases)
+        if call_name in {
+            "__import__",
+            "importlib.import_module",
+            "importlib.util.module_from_spec",
+            "importlib.util.spec_from_file_location",
+        } or (call_name is not None and call_name.endswith(".exec_module")):
+            codes.add("dynamic-import")
+
+        if call_name is not None and call_name.startswith("sys.path."):
+            if call_name.rsplit(".", maxsplit=1)[-1] in {
+                "append",
+                "clear",
+                "extend",
+                "insert",
+                "pop",
+                "remove",
+                "reverse",
+                "sort",
+            }:
+                codes.add("source-path-injection")
+        if call_name == "setattr" and len(node.args) >= 2:
+            owner = _python_qualified_name(node.args[0], aliases)
+            attribute = _python_literal_value(node.args[1])
+            if owner == "sys" and attribute == "path":
+                codes.add("source-path-injection")
+            if owner in {"openai", "OpenAI"} and attribute in {"api_" + "base", "base_" + "url"}:
+                codes.add("custom-openai-endpoint")
+
+        if call_name in {"os.putenv", "os.environ.__setitem__", "os.environb.__setitem__"}:
+            if node.args and _python_literal_value(node.args[0]) in REMOVED_ENVIRONMENT_NAMES:
+                codes.add("source-path-injection")
+        if call_name in {"os.environ.update", "os.environb.update"}:
+            if any(value in REMOVED_ENVIRONMENT_NAMES for value in _python_string_values(node)):
+                codes.add("source-path-injection")
+
+        if call_name is not None and call_name.endswith(".add_argument"):
+            if any(_python_literal_value(argument) in REMOVED_CLI_OPTIONS for argument in node.args):
+                codes.add("removed-source-interface")
+
+        if call_name in {
+            "subprocess.call",
+            "subprocess.check_call",
+            "subprocess.check_output",
+            "subprocess.Popen",
+            "subprocess.run",
+        }:
+            strings = _python_string_values(node)
+            compact = "".join(strings).lower()
+            has_external_module = any(
+                re.search(r"(?:^|[.])train$", value.lower())
+                and not value.lower().startswith(("midline_agent.", "scripts."))
+                for value in strings
+            )
+            if "train.py" in compact or has_external_module:
+                codes.add("external-training-delegation")
+
+        for child in ast.walk(node):
+            if isinstance(child, ast.Dict):
+                keys = {_python_literal_value(key) for key in child.keys}
+                if keys & {"api_" + "base", "base_" + "url", "openai_base_" + "url"}:
+                    codes.add("custom-openai-endpoint")
+        if call_name is not None and call_name.rsplit(".", maxsplit=1)[-1].lower() in {
+            "asyncopenai",
+            "openai",
+        }:
+            if any(_is_unofficial_url(value) for value in _python_string_values(node)):
+                codes.add("custom-openai-endpoint")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            assignments = [(target, node.value) for target in node.targets]
+        elif isinstance(node, ast.AnnAssign):
+            assignments = [(node.target, node.value)]
+        else:
+            assignments = []
+        for target, value_node in assignments:
+            target_name = _python_target_name(target)
+            value = _python_literal_value(value_node)
+            if (
+                target_name is not None
+                and target_name.lower() in {"provider", "relay", "relay_name", "service", "service_name"}
+                and isinstance(value, str)
+                and value.lower() in RELAY_SERVICE_NAMES
+            ):
+                codes.add("relay-service")
+        if isinstance(node, ast.Call):
+            for keyword in node.keywords:
+                value = _python_literal_value(keyword.value)
+                if (
+                    keyword.arg in {"provider", "relay", "service"}
+                    and isinstance(value, str)
+                    and value.lower() in RELAY_SERVICE_NAMES
+                ):
+                    codes.add("relay-service")
+    return codes
+
+
 def _python_value_is_secret(node: ast.AST | None) -> bool:
     value = _python_literal_value(node)
     if value is NON_LITERAL or value is None:
@@ -288,19 +535,69 @@ def _python_has_credential_literal(content: str) -> bool | None:
                     if _python_value_is_secret(keyword.value):
                         return True
         if isinstance(node, ast.Assign):
-            targets = node.targets
-            value = node.value
+            pairs = [
+                pair
+                for target in node.targets
+                for pair in _python_assignment_pairs(target, node.value)
+            ]
         elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-            value = node.value
+            pairs = _python_assignment_pairs(node.target, node.value)
         else:
             continue
-        names = [name for target in targets if (name := _python_target_name(target)) is not None]
-        if not any(_is_credential_name(name) for name in names):
-            continue
-        if _python_value_is_secret(value):
-            return True
+        for target, value in pairs:
+            name = _python_target_name(target)
+            if name is not None and _is_credential_name(name) and _python_value_is_secret(value):
+                return True
     return False
+
+
+def _matches_release_path(path: Path, release_path: str) -> bool:
+    return path.as_posix().lower().endswith(release_path.lower())
+
+
+def _is_approved_prohibition_line(path: Path, lines: list[str], line_number: int) -> bool:
+    if not any(_matches_release_path(path, item) for item in APPROVED_PROHIBITION_PATHS):
+        return False
+    context = " ".join(lines[max(0, line_number - 8) : line_number + 1]).lower()
+    return any(marker in context for marker in PROHIBITION_MARKERS)
+
+
+def _has_legacy_runtime_path(line: str) -> bool:
+    return re.search(rf"\b{re.escape(LEGACY_RUNTIME_ROOT)}/", line, re.IGNORECASE) is not None
+
+
+def _is_imperative_legacy_instruction(line: str) -> bool:
+    return re.search(
+        r"\b(?:add|clone|execute|import|install|load|run|use)\b",
+        line,
+        re.IGNORECASE,
+    ) is not None
+
+
+def _text_policy_codes(path: Path, content: str) -> set[str]:
+    if path.suffix.lower() not in TEXT_INTERFACE_SUFFIXES and not path.name.startswith(".env"):
+        return set()
+
+    codes: set[str] = set()
+    lines = content.splitlines()
+    for line_number, line in enumerate(lines):
+        has_removed_interface = any(name in line for name in REMOVED_ENVIRONMENT_NAMES) or any(
+            option in line for option in REMOVED_CLI_OPTIONS
+        )
+        if has_removed_interface and not _is_approved_prohibition_line(path, lines, line_number):
+            codes.add("removed-source-interface")
+
+        if _has_legacy_runtime_path(line):
+            is_approved_reference = _matches_release_path(
+                path, APPROVED_PROVENANCE_PATH
+            ) or _matches_release_path(path, APPROVED_DESIGN_PATH)
+            if not is_approved_reference or _is_imperative_legacy_instruction(line):
+                codes.add("external-runtime-import")
+
+    if path.suffix.lower() in SHELL_SUFFIXES:
+        if any(re.match(r"^[ \t]*(?:source|\.)[ \t]+", line) for line in lines):
+            codes.add("source-path-injection")
+    return codes
 
 
 def _content_violations(path: Path, content: str) -> list[Violation]:
@@ -326,12 +623,29 @@ def _content_violations(path: Path, content: str) -> list[Violation]:
         violations.append(Violation(path, "private-path", "private absolute path detected"))
     if HAN_PATTERN.search(content):
         violations.append(Violation(path, "han-character", "Han character detected"))
+    elif any(ord(character) > 127 for character in content):
+        violations.append(Violation(path, "non-ascii", "non-ASCII text detected"))
     if any(term.lower() in lowered for term in CUSTOM_ENDPOINT_TERMS):
         violations.append(Violation(path, "custom-openai-endpoint", "custom OpenAI endpoint configuration detected"))
     if any(re.search(rf"\b{re.escape(name)}\b", lowered) for name in RELAY_SERVICE_NAMES):
         violations.append(Violation(path, "relay-service", "OpenAI relay service name detected"))
     if not _is_policy_content(path) and re.search(r"\bbaseline\b", lowered):
         violations.append(Violation(path, "prohibited-term", "prohibited release term detected"))
+    details = {
+        "custom-openai-endpoint": "custom OpenAI endpoint configuration detected",
+        "dynamic-import": "dynamic external runtime import detected",
+        "external-runtime-import": "external runtime import or instruction detected",
+        "external-training-delegation": "delegation to an external training entrypoint detected",
+        "relay-service": "OpenAI relay service name detected",
+        "removed-source-interface": "removed external source interface detected",
+        "source-path-injection": "Python source path injection detected",
+    }
+    existing_codes = {violation.code for violation in violations}
+    policy_codes = _text_policy_codes(path, content)
+    if path.suffix.lower() == ".py":
+        policy_codes.update(_python_policy_codes(content))
+    for code in sorted(policy_codes - existing_codes):
+        violations.append(Violation(path, code, details[code]))
     return violations
 
 
