@@ -242,6 +242,41 @@ def test_audit_distinguishes_model_token_counts_from_credentials(tmp_path: Path)
     assert _codes([credential]) == {"embedded-secret"}
 
 
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("pad_token", '"$$"'),
+        ("bos_token", '"[BOS]"'),
+        ("eos_token", '"[EOS]"'),
+        ("unk_token", '"[UNK]"'),
+        ("mask_token", '"[MASK]"'),
+    ],
+)
+def test_audit_allows_model_vocabulary_token_literals(
+    tmp_path: Path,
+    field_name: str,
+    field_value: str,
+) -> None:
+    model_config = tmp_path / "model_config.py"
+    model_config.write_text(f"{field_name} = {field_value}\n", encoding="utf-8")
+
+    assert audit_paths([model_config]) == []
+
+
+@pytest.mark.parametrize("field_name", ["api_token", "access_token", "auth_token"])
+def test_audit_still_rejects_credential_token_literals(
+    tmp_path: Path,
+    field_name: str,
+) -> None:
+    credential = tmp_path / "credential.py"
+    credential.write_text(
+        f'{field_name} = "literal_abcdefghijklmnopqrstuvwxyz123456"\n',
+        encoding="utf-8",
+    )
+
+    assert _codes([credential]) == {"embedded-secret"}
+
+
 def test_audit_rejects_binary_content_even_with_text_suffix(tmp_path: Path) -> None:
     artifact = tmp_path / "artifact.txt"
     artifact.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")

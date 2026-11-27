@@ -201,6 +201,10 @@ def _is_credential_name(name: str) -> bool:
         )
         if token
     ]
+    vocabulary_roles = {"bos", "cls", "eos", "mask", "pad", "sep", "unk"}
+    if len(ordered_tokens) == 2 and ordered_tokens[1] == "token":
+        if ordered_tokens[0] in vocabulary_roles:
+            return False
     sensitive_endings = {"token", "secret", "password", "credential", "credentials"}
     if len(ordered_tokens) > 1 and ordered_tokens[0] in {"num", "number", "count"}:
         return False
