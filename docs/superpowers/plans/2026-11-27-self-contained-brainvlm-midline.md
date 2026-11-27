@@ -268,7 +268,7 @@ def predict_who_generation(self, image_path, metadata, tumor_type, age) -> str: 
 
 Keep `from_model()` for isolated contract tests.
 
-- [ ] **Step 4: Remove the generic external adapter**
+- [x] **Step 4: Remove the generic external adapter**
 
 Delete the adapter implementation and bridge-specific tests. Update exports so callers can only use the internal runtime contract.
 
@@ -278,7 +278,7 @@ Run: `pytest -q tests/test_brainvlm_runtime.py tests/diagnostic/test_slice_featu
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the runtime replacement**
+- [x] **Step 6: Commit the runtime replacement**
 
 ```bash
 git add -A midline_agent/diagnostic tests/test_brainvlm_runtime.py tests/diagnostic tests/test_brainvlm_bridge.py tests/test_diagnostic_adapter.py

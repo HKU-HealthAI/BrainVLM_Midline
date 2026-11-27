@@ -27,10 +27,8 @@ midline_agent/datasets/mri_dataset.py
 midline_agent/datasets/prompts.py
 midline_agent/datasets/splits.py
 midline_agent/diagnostic/__init__.py
-midline_agent/diagnostic/adapters.py
 midline_agent/diagnostic/artifact_io.py
 midline_agent/diagnostic/attention_mil.py
-midline_agent/diagnostic/brainvlm_adapter.py
 midline_agent/diagnostic/brainvlm_midline/__init__.py
 midline_agent/diagnostic/brainvlm_midline/collate.py
 midline_agent/diagnostic/brainvlm_midline/config.py
@@ -129,10 +127,8 @@ tests/diagnostic/test_slice_features.py
 tests/fixtures/brainvlm_training/annotations.json
 tests/test_annotations.py
 tests/test_attention_mil.py
-tests/test_brainvlm_bridge.py
 tests/test_brainvlm_runtime.py
 tests/test_cli_entrypoints.py
-tests/test_diagnostic_adapter.py
 tests/test_diagnostic_workflow.py
 tests/test_documentation_contract.py
 tests/test_feature_store.py
