@@ -9,6 +9,7 @@ docs/data-schema.md
 docs/external-brainvlm-adapter.md
 docs/superpowers/plans/2026-11-27-checkpoint-inference.md
 docs/superpowers/specs/2026-11-27-checkpoint-inference-design.md
+docs/superpowers/specs/2026-11-27-treatment-private-evidence-design.md
 docs/survival-agent.md
 docs/treatment-providers.md
 midline_agent/__init__.py
